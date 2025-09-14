@@ -63,6 +63,7 @@
             color: #1f2937; /* gray-800 */
             font-size: 0.875rem;
             cursor: pointer;
+            user-select: none;
         }
         .signal-label-row.selected-row {
             background-color: #e5e7eb; /* gray-200 */
@@ -103,6 +104,10 @@
             text-align: center;
             white-space: nowrap;
         }
+        td:first-child {
+            cursor: pointer;
+            user-select: none;
+        }
         th {
             background-color: #f3f4f6; /* gray-100 */
             color: #1f2937; /* gray-800 */
@@ -112,6 +117,9 @@
         }
         td {
              background-color: #ffffff;
+        }
+        tr.table-row-selected td {
+            background-color: #dbeafe; /* A light blue for selected table rows */
         }
         .signal-input {
             background-color: transparent;
@@ -235,6 +243,46 @@
         .ai-add-btn:hover {
             background-color: #2563EB;
         }
+         /* Toggle Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 22px;
+        }
+        .switch input { 
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 22px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #3B82F6;
+        }
+        input:checked + .slider:before {
+            transform: translateX(18px);
+        }
     </style>
 </head>
 <body class="text-gray-800 flex flex-col">
@@ -286,6 +334,27 @@
         <button id="nextEdgeBtn" class="control-btn" title="Next Edge">
             <i class="ph ph-arrow-line-right"></i>
         </button>
+        
+        <div class="h-6 w-px bg-gray-300 mx-2"></div>
+
+        <div class="flex items-center space-x-2">
+            <label class="flex items-center cursor-pointer">
+                <span class="mr-2 text-sm font-medium text-gray-700">POS en</span>
+                <div class="switch">
+                    <input type="checkbox" id="pos-edge-toggle">
+                    <span class="slider"></span>
+                </div>
+            </label>
+        </div>
+         <div class="flex items-center space-x-2">
+            <label class="flex items-center cursor-pointer">
+                <span class="mr-2 text-sm font-medium text-gray-700">NEG en</span>
+                <div class="switch">
+                    <input type="checkbox" id="neg-edge-toggle">
+                    <span class="slider"></span>
+                </div>
+            </label>
+        </div>
 
          <!-- Value Toolbar -->
         <div id="value-dropdown" class="hidden flex items-center space-x-2 ml-4">
@@ -346,10 +415,13 @@
     <div id="context-menu" class="hidden absolute bg-white border border-gray-300 rounded-md shadow-lg p-2 text-sm z-50"></div>
     
     <!-- Signal Generation Context Menu -->
-    <div id="signal-context-menu" class="hidden absolute bg-white border border-gray-300 rounded-md shadow-lg z-50 text-sm">
+    <div id="signal-context-menu" class="hidden absolute bg-white border border-gray-300 rounded-md shadow-lg z-50 text-sm py-1">
         <div class="p-2 hover:bg-gray-100 cursor-pointer" id="generate-clock">Generate Clock...</div>
         <div class="p-2 hover:bg-gray-100 cursor-pointer" id="generate-reset">Generate Reset...</div>
         <div class="p-2 hover:bg-gray-100 cursor-pointer" id="generate-fsm">Generate FSM...</div>
+        <div class="my-1 border-t border-gray-200"></div>
+        <div class="p-2 hover:bg-gray-100 cursor-pointer" id="duplicate-signal">Duplicate Signal(s)</div>
+        <div class="p-2 hover:bg-gray-100 cursor-pointer text-red-600" id="delete-signal">Delete Signal(s)</div>
     </div>
 
     <!-- Generator Modal -->
@@ -436,6 +508,8 @@
             const aiBtn = document.getElementById('aiBtn');
             const prevEdgeBtn = document.getElementById('prevEdgeBtn');
             const nextEdgeBtn = document.getElementById('nextEdgeBtn');
+            const posEdgeToggle = document.getElementById('pos-edge-toggle');
+            const negEdgeToggle = document.getElementById('neg-edge-toggle');
 
             // Signal Gen elements
             const signalContextMenu = document.getElementById('signal-context-menu');
@@ -484,14 +558,28 @@
             
             // --- Row Selection State ---
             let selectedSignalIndex = null;
+            let selectedTableRows = new Set();
+
+            // --- Edge Marker State ---
+            let posEdgeEnabled = false;
+            let negEdgeEnabled = false;
 
 
-            const createSignal = (name, range, values) => ({ name, range, values, id: Math.random().toString(36).substr(2, 9) });
+            const createSignal = (name, range, values) => ({ 
+                name, 
+                range, 
+                values, 
+                id: Math.random().toString(36).substr(2, 9),
+                isExpanded: false,
+                isBusMember: false,
+                busParentName: null
+            });
 
             const render = () => {
                 renderCanvas();
                 renderTable();
                 renderSignalLabels();
+                updateTableRowSelectionVisuals();
             };
 
             const renderCanvas = () => {
@@ -537,7 +625,7 @@
 
                 signals.forEach((signal, index) => {
                     const y = index * ROW_HEIGHT + TOP_MARGIN;
-                    drawWave(signal, y);
+                    drawWave(signal, y, index);
                 });
 
                 // --- Draw Markers ---
@@ -585,8 +673,17 @@
                     if (index === selectedSignalIndex) {
                         labelRow.classList.add('selected-row');
                     }
+
+                    let namePrefix = '';
+                    const rangeMatch = signal.range.match(/\[(\d+):(\d+)\]/);
+                    if (rangeMatch && parseInt(rangeMatch[1], 10) > parseInt(rangeMatch[2], 10)) {
+                        namePrefix = signal.isExpanded ? '[-] ' : '[+] ';
+                    }
+
+                    let indentation = signal.isBusMember ? 'padding-left: 20px;' : '';
+                    
                     labelRow.innerHTML = `
-                        <div class="signal-name-col" style="width: ${signalNameColWidth}px; min-width: ${signalNameColWidth}px;" title="${signal.name}">${signal.name}</div>
+                        <div class="signal-name-col" style="width: ${signalNameColWidth}px; min-width: ${signalNameColWidth}px; ${indentation}" title="${signal.name}"><span class="font-mono">${namePrefix}</span>${signal.name}</div>
                         <div class="range-col text-center" style="width: ${rangeColWidth}px; min-width: ${rangeColWidth}px;">${signal.range}</div>
                     `;
                     body.appendChild(labelRow);
@@ -612,14 +709,29 @@
                 signals.forEach((signal, signalIndex) => {
                     const row = document.createElement('tr');
                     
-                    row.innerHTML = `
-                        <td class="sticky left-0 z-0" style="width: ${signalNameColWidth}px; min-width: ${signalNameColWidth}px;"><input type="text" value="${signal.name}" data-signal-index="${signalIndex}" data-type="name" class="signal-input"></td>
-                        <td style="width: ${rangeColWidth}px; min-width: ${rangeColWidth}px;"><input type="text" value="${signal.range}" data-signal-index="${signalIndex}" data-type="range" class="signal-input text-center"></td>
+                    const nameCell = document.createElement('td');
+                    nameCell.className = `sticky left-0 z-0 text-left`;
+                    nameCell.style.width = `${signalNameColWidth}px`;
+                    nameCell.style.minWidth = `${signalNameColWidth}px`;
+
+                    let namePrefix = '';
+                    const rangeMatch = signal.range.match(/\[(\d+):(\d+)\]/);
+                     if (rangeMatch && parseInt(rangeMatch[1], 10) > parseInt(rangeMatch[2], 10) && !signal.isBusMember) {
+                        namePrefix = signal.isExpanded ? '[-] ' : '[+] ';
+                    }
+                    if (signal.isBusMember) {
+                        nameCell.style.paddingLeft = '1.5rem';
+                    }
+                    nameCell.innerHTML = `<span class="font-mono">${namePrefix}</span><input type="text" value="${signal.name}" data-signal-index="${signalIndex}" data-type="name" class="signal-input w-auto" ${signal.isBusMember ? 'readonly' : ''}>`;
+                    row.appendChild(nameCell);
+                    
+                    row.innerHTML += `
+                        <td style="width: ${rangeColWidth}px; min-width: ${rangeColWidth}px;"><input type="text" value="${signal.range}" data-signal-index="${signalIndex}" data-type="range" class="signal-input text-center" ${signal.isBusMember ? 'readonly' : ''}></td>
                     `;
                     
                     signal.values.forEach((val, timeIndex) => {
                          const cell = document.createElement('td');
-                         cell.setAttribute('contenteditable', !isSelectionMode);
+                         cell.setAttribute('contenteditable', !isSelectionMode && !signal.isBusMember);
                          cell.className = 'value-cell';
                          cell.textContent = val;
                          cell.dataset.signalIndex = signalIndex;
@@ -631,7 +743,7 @@
             };
 
             const parseValue = (valStr) => {
-                if (typeof valStr !== 'string') return { value: valStr, delay: 0 };
+                if (typeof valStr !== 'string') return { value: String(valStr), delay: 0 };
                 const match = valStr.match(/^(.*)\((\d*\.?\d+)\)$/);
                 if (match && match[1] !== '' && !isNaN(parseFloat(match[2]))) {
                     let delay = parseFloat(match[2]);
@@ -641,18 +753,38 @@
                 return { value: valStr, delay: 0 };
             };
 
-            const drawWave = (signal, y) => {
+            const drawArrow = (ctx, x, y, up) => {
+                const size = 8; // Increased size for visibility
+                ctx.beginPath();
+                ctx.fillStyle = '#10B981'; // green-500
+                if (up) {
+                    // Draw arrow pointing up, centered on the edge
+                    const yPos = y + size / 2;
+                    ctx.moveTo(x, yPos - size);
+                    ctx.lineTo(x - size / 2, yPos);
+                    ctx.lineTo(x + size / 2, yPos);
+                } else { // down
+                    // Draw arrow pointing down, centered on the edge
+                    const yPos = y - size / 2;
+                    ctx.moveTo(x, yPos + size);
+                    ctx.lineTo(x - size / 2, yPos);
+                    ctx.lineTo(x + size / 2, yPos);
+                }
+                ctx.closePath();
+                ctx.fill();
+            };
+
+            const drawWave = (signal, y, signalIndex) => {
                 const yHigh = y + (ROW_HEIGHT * 0.2);
                 const yLow = y + (ROW_HEIGHT * 0.8);
                 const yMid = y + (ROW_HEIGHT * 0.5);
                 const yLevel = (val) => val === '1' ? yHigh : (val === '0' ? yLow : yMid);
 
-                if (signal.range.trim() !== '' && signal.range.includes(':')) {
+                if (signal.range.trim() !== '' && signal.range.includes(':') && !signal.isBusMember) {
                     drawBusWave(signal, y);
                     return;
                 }
 
-                // Build points of transition
                 const points = [];
                 if (timeStepCount > 0) {
                     let initialParse = parseValue(signal.values[0]);
@@ -668,7 +800,6 @@
                     points.push({ t: timeStepCount, val: parseValue(signal.values[timeStepCount - 1]).value });
                 }
 
-                // Draw waveform from points
                 for (let i = 0; i < points.length - 1; i++) {
                     const startPoint = points[i];
                     const endPoint = points[i+1];
@@ -697,7 +828,6 @@
                         ctx.stroke();
                     }
                     
-                    // Draw vertical transition line
                     const endVal = endPoint.val.toUpperCase();
                     if (startVal !== endVal) {
                         const y1 = yLevel(startVal);
@@ -707,6 +837,16 @@
                         ctx.moveTo(xEnd, y1);
                         ctx.lineTo(xEnd, y2);
                         ctx.stroke();
+                        
+                        // Draw edge arrows if enabled for the selected signal
+                        if (signalIndex === selectedSignalIndex) {
+                            if (posEdgeEnabled && startVal === '0' && endVal === '1') {
+                                drawArrow(ctx, xEnd, yHigh, true);
+                            }
+                            if (negEdgeEnabled && startVal === '1' && endVal === '0') {
+                                drawArrow(ctx, xEnd, yLow, false);
+                            }
+                        }
                     }
                 }
             };
@@ -799,17 +939,55 @@
                 const target = e.target;
                 const signalIndex = target.dataset.signalIndex;
                 if (signalIndex === undefined) return;
-                
-                if (target.dataset.timeIndex !== undefined) {
-                    signals[signalIndex].values[target.dataset.timeIndex] = target.textContent;
-                } else if (target.dataset.type === 'name') {
+
+                // Handle name and range changes
+                if (target.dataset.type === 'name') {
                     signals[signalIndex].name = target.value;
                     renderSignalLabels();
-                } else if (target.dataset.type === 'range') {
-                     signals[signalIndex].range = target.value;
-                     renderSignalLabels();
+                    return;
                 }
-                renderCanvas();
+                if (target.dataset.type === 'range') {
+                    signals[signalIndex].range = target.value;
+                    renderSignalLabels();
+                    renderCanvas();
+                    return;
+                }
+
+                // Handle value changes (including delays)
+                const timeIndex = parseInt(target.dataset.timeIndex, 10);
+                if (!isNaN(timeIndex)) {
+                    const oldRawValue = signals[signalIndex].values[timeIndex];
+                    const newRawValue = target.textContent;
+
+                    const oldParsed = parseValue(oldRawValue);
+                    const newParsed = parseValue(newRawValue);
+
+                    signals[signalIndex].values[timeIndex] = newRawValue;
+
+                    const delayDifference = newParsed.delay - oldParsed.delay;
+
+                    if (Math.abs(delayDifference) > 0.001) {
+                        for (let i = timeIndex + 1; i < timeStepCount; i++) {
+                            const subsequentRawValue = signals[signalIndex].values[i];
+                            const subsequentParsed = parseValue(subsequentRawValue);
+
+                            let combinedDelay = subsequentParsed.delay + delayDifference;
+                            combinedDelay = Math.max(0, Math.min(0.99, combinedDelay));
+
+                            let finalValue;
+                            if (combinedDelay > 0.001) {
+                                const delayString = parseFloat(combinedDelay.toFixed(2)).toString();
+                                finalValue = `${subsequentParsed.value}(${delayString})`;
+                            } else {
+                                finalValue = subsequentParsed.value;
+                            }
+                            signals[signalIndex].values[i] = finalValue;
+                        }
+                        render();
+                    } else {
+                        renderCanvas();
+                    }
+                }
             });
             
             tableBody.addEventListener('focusout', (e) => {
@@ -1193,6 +1371,11 @@
                 generatorModalContent.innerHTML = `
                     <label for="clock-period">Half Period (timesteps):</label>
                     <input type="number" id="clock-period" value="1" min="1">
+                    <label for="clock-start">Start From:</label>
+                    <select id="clock-start">
+                        <option value="0">0</option>
+                        <option value="1" selected>1</option>
+                    </select>
                 `;
                 generatorApplyBtn.textContent = 'Generate'; // Ensure correct button text
                 generatorApplyBtn.onclick = executeClockGeneration;
@@ -1201,12 +1384,19 @@
 
             const executeClockGeneration = () => {
                 const halfPeriod = parseInt(document.getElementById('clock-period').value, 10) || 1;
+                const startValue = document.getElementById('clock-start').value;
                 const signal = signals[activeSignalIndexForGeneration];
                 if (!signal) return;
 
                 const newValues = [];
                 for (let i = 0; i < timeStepCount; i++) {
-                    const value = Math.floor(i / halfPeriod) % 2 === 0 ? '0' : '1';
+                    const cyclePhase = Math.floor(i / halfPeriod) % 2;
+                    let value;
+                    if (startValue === '0') {
+                        value = cyclePhase === 0 ? '0' : '1';
+                    } else { // startValue is '1'
+                        value = cyclePhase === 0 ? '1' : '0';
+                    }
                     newValues.push(value);
                 }
                 signal.values = newValues;
@@ -1352,10 +1542,25 @@
                     const firstCell = e.target.closest('td:first-child');
                     if (firstCell) {
                         e.preventDefault();
-                        const signalIndex = firstCell.querySelector('input').dataset.signalIndex;
-                        activeSignalIndexForGeneration = parseInt(signalIndex, 10);
+                        const signalIndex = firstCell.parentElement.rowIndex - 1;
+                        
+                        if (!selectedTableRows.has(signalIndex)) {
+                            selectedTableRows.clear();
+                            selectedTableRows.add(signalIndex);
+                            updateTableRowSelectionVisuals();
+                        }
 
-                        signalContextMenu.style.top = `${e.clientY}px`;
+                        activeSignalIndexForGeneration = signalIndex;
+                        
+                        const menuHeight = signalContextMenu.offsetHeight;
+                        const windowHeight = window.innerHeight;
+                        let top = e.clientY;
+
+                        if (top + menuHeight > windowHeight) {
+                            top = e.clientY - menuHeight;
+                        }
+
+                        signalContextMenu.style.top = `${top}px`;
                         signalContextMenu.style.left = `${e.clientX}px`;
                         signalContextMenu.classList.remove('hidden');
                     }
@@ -1373,6 +1578,30 @@
                     signalContextMenu.classList.add('hidden');
                     setupFsmModal();
                 });
+
+                 document.getElementById('delete-signal').addEventListener('click', () => {
+                    signalContextMenu.classList.add('hidden');
+                    const indicesToDelete = Array.from(selectedTableRows).sort((a, b) => b - a);
+                    indicesToDelete.forEach(index => signals.splice(index, 1));
+                    selectedTableRows.clear();
+                    selectedSignalIndex = null;
+                    render();
+                });
+                 document.getElementById('duplicate-signal').addEventListener('click', () => {
+                    signalContextMenu.classList.add('hidden');
+                    const indicesToDuplicate = Array.from(selectedTableRows).sort((a, b) => a - b);
+                    let offset = 0;
+                    indicesToDuplicate.forEach(index => {
+                         const originalSignal = signals[index + offset];
+                         const newSignal = JSON.parse(JSON.stringify(originalSignal)); // Deep copy
+                         newSignal.name = originalSignal.name + "_copy";
+                         signals.splice(index + offset + 1, 0, newSignal);
+                         offset++;
+                    });
+                    selectedTableRows.clear();
+                    render();
+                });
+
                 generatorCancelBtn.addEventListener('click', hideGeneratorModal);
                 generatorModalOverlay.addEventListener('click', (e) => {
                     if (e.target === generatorModalOverlay) {
@@ -1529,43 +1758,147 @@
             };
             
             const addEdgeNavigationLogic = () => {
-                nextEdgeBtn.addEventListener('click', () => {
+                const findEdge = (forward) => {
                     if (selectedSignalIndex === null) return;
-                    
-                    const values = signals[selectedSignalIndex].values;
-                    const startTime = markerTime === null ? 0 : Math.floor(markerTime) + 1;
+                    const signal = signals[selectedSignalIndex];
+                    const transitions = getSignalTransitionTimes(signal);
+                    const currentTime = markerTime === null ? (forward ? -1 : timeStepCount + 1) : markerTime;
+                    let edgeTime;
 
-                    for (let i = startTime; i < timeStepCount; i++) {
-                        if (i > 0 && values[i] !== values[i-1]) {
-                            markerTime = i;
-                            scanField.value = markerTime.toFixed(2);
-                            renderCanvas();
-                            return;
-                        }
+                    if (forward) {
+                        edgeTime = transitions.find(t => t > currentTime + 0.001);
+                    } else {
+                        edgeTime = transitions.slice().reverse().find(t => t < currentTime - 0.001);
+                    }
+
+                    if (edgeTime !== undefined) {
+                        markerTime = edgeTime;
+                        scanField.value = markerTime.toFixed(2);
+                        renderCanvas();
+                    }
+                };
+
+                nextEdgeBtn.addEventListener('click', () => findEdge(true));
+                prevEdgeBtn.addEventListener('click', () => findEdge(false));
+            };
+
+            const getSignalTransitionTimes = (signal) => {
+                const transitions = [];
+                if (!signal || timeStepCount === 0) return transitions;
+
+                for (let i = 1; i < timeStepCount; i++) {
+                    const prevParsed = parseValue(signal.values[i - 1]);
+                    const currParsed = parseValue(signal.values[i]);
+
+                    if (currParsed.value !== prevParsed.value) {
+                        transitions.push(i + currParsed.delay);
+                    }
+                }
+                return transitions;
+            };
+
+            const updateTableRowSelectionVisuals = () => {
+                const rows = tableBody.querySelectorAll('tr');
+                rows.forEach((row, index) => {
+                    if (selectedTableRows.has(index)) {
+                        row.classList.add('table-row-selected');
+                    } else {
+                        row.classList.remove('table-row-selected');
                     }
                 });
+            };
 
-                prevEdgeBtn.addEventListener('click', () => {
-                     if (selectedSignalIndex === null) return;
-                    
-                    const values = signals[selectedSignalIndex].values;
-                    const startTime = markerTime === null ? timeStepCount - 1 : Math.floor(markerTime - 0.01);
+            const addTableRowSelectionLogic = () => {
+                tableBody.addEventListener('click', (e) => {
+                    const row = e.target.closest('tr');
+                    if (!row) return;
 
-                    for (let i = startTime; i >= 1; i--) {
-                         if (values[i] !== values[i-1]) {
-                            markerTime = i;
-                            scanField.value = markerTime.toFixed(2);
-                            renderCanvas();
-                            return;
+                    const signalIndex = row.rowIndex - 1; // rowIndex is 1-based, our index is 0-based
+
+                    if (e.ctrlKey) {
+                        if (selectedTableRows.has(signalIndex)) {
+                            selectedTableRows.delete(signalIndex);
+                        } else {
+                            selectedTableRows.add(signalIndex);
                         }
+                    } else {
+                        selectedTableRows.clear();
+                        selectedTableRows.add(signalIndex);
                     }
+                    updateTableRowSelectionVisuals();
                 });
+            };
+            
+            const handleSignalDoubleClick = (index) => {
+                const signal = signals[index];
+                if (!signal) return;
+
+                // If clicking a bit signal, find the parent and collapse it.
+                if (signal.isBusMember) {
+                    const parentIndex = signals.findIndex(s => s.name === signal.busParentName);
+                    if (parentIndex !== -1) {
+                        handleSignalDoubleClick(parentIndex);
+                    }
+                    return;
+                }
+
+                const rangeMatch = signal.range.match(/\[(\d+):(\d+)\]/);
+                if (!rangeMatch) return;
+
+                if (signal.isExpanded) {
+                    // Collapse
+                    const children = signals.filter(s => s.busParentName === signal.name);
+                    if (children.length > 0) {
+                        const firstChildIndex = signals.findIndex(s => s.id === children[0].id);
+                        signals.splice(firstChildIndex, children.length);
+                    }
+                    signal.isExpanded = false;
+                    render();
+                } else {
+                    // Expand
+                    const high = parseInt(rangeMatch[1], 10);
+                    const low = parseInt(rangeMatch[2], 10);
+                    const width = high - low + 1;
+
+                    if (width <= 1) return;
+
+                    const newBitSignals = [];
+                    for (let i = high; i >= low; i--) {
+                        const newSignal = createSignal(`${signal.name.split('[')[0]}[${i}]`, '', []);
+                        newSignal.isBusMember = true;
+                        newSignal.busParentName = signal.name;
+                        
+                        for (let t = 0; t < timeStepCount; t++) {
+                            const busValue = parseValue(signal.values[t]).value;
+                            let bits = '';
+                            
+                            if (busValue.toUpperCase() === 'X' || busValue.toUpperCase() === 'Z') {
+                                bits = busValue.toUpperCase().repeat(width);
+                            } else if (busValue.startsWith('0x')) {
+                                bits = parseInt(busValue, 16).toString(2).padStart(width, '0');
+                            } else {
+                                bits = parseInt(busValue, 10).toString(2).padStart(width, '0');
+                            }
+
+                            if (bits.length > width) {
+                                bits = bits.slice(bits.length - width);
+                            }
+                            
+                            const bitIndex = high - i;
+                            newSignal.values.push(bits[bitIndex] || 'X');
+                        }
+                        newBitSignals.push(newSignal);
+                    }
+                    signals.splice(index + 1, 0, ...newBitSignals);
+                    signal.isExpanded = true;
+                    render();
+                }
             };
 
             timeStepCount = 15;
             signals.push(createSignal('clk', '', ['0','1','0','1','0','1','0','1','0','1','0','1','0','1','0']));
             signals.push(createSignal('a_very_long_signal_name_that_needs_resizing', '', ['0','0','1','1','1','0','0','0','1','1','0','0','0','0','0']));
-            signals.push(createSignal('addr', '[7:0]', ['0x10', '0x10', '0x2A', '0x2A', 'X', 'X', 'X', '0x2A', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE']));
+            signals.push(createSignal('addr[7:0]', '[7:0]', ['0x10', '0x10', '0x2A', '0x2A', 'X', 'X', 'X', '0x2A', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE']));
             signals.push(createSignal('rst_n', '', ['0','0','1','1','1','1','1','1','1','1','1','1','1','1','1']));
             signals.push(createSignal('en', '', ['1', '1', 'z', 'z', 'z', '0', '0', 'x', 'x', '1', '1', '1', '1', '0', '0']));
             
@@ -1580,6 +1913,25 @@
             addAiLogic();
             addSignalSelectionLogic();
             addEdgeNavigationLogic();
+            addTableRowSelectionLogic();
+
+            signalLabels.addEventListener('dblclick', (e) => {
+                const row = e.target.closest('.signal-label-row');
+                 if (row && signalLabelsBody) {
+                    const allRows = Array.from(signalLabelsBody.children);
+                    const index = allRows.indexOf(row);
+                    handleSignalDoubleClick(index);
+                }
+            });
+
+             tableBody.addEventListener('dblclick', (e) => {
+                const cell = e.target.closest('td:first-child');
+                if (cell) {
+                    const signalIndex = cell.parentElement.rowIndex - 1;
+                    handleSignalDoubleClick(signalIndex);
+                }
+            });
+
             saveCsvBtn.addEventListener('click', exportToCsv);
             importCsvBtn.addEventListener('click', () => csvFileInput.click());
             csvFileInput.addEventListener('change', handleCsvImport);
@@ -1598,6 +1950,16 @@
                     }
                 );
             });
+            
+            posEdgeToggle.addEventListener('change', (e) => {
+                posEdgeEnabled = e.target.checked;
+                renderCanvas();
+            });
+            negEdgeToggle.addEventListener('change', (e) => {
+                negEdgeEnabled = e.target.checked;
+                renderCanvas();
+            });
+
             render();
         });
     </script>

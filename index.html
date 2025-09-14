@@ -1,0 +1,1605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Waveform Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #f9fafb; /* gray-50 */
+        }
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 52px); /* Full height minus header */
+        }
+        .top-panel {
+            display: flex;
+            height: 50%; /* Replaces flex-basis */
+            overflow: hidden;
+            flex-shrink: 0; /* Prevents shrinking */
+            min-height: 0; /* Prevent flexbox overflow issues */
+        }
+        .signal-labels {
+            /* width is now set by JS */
+            flex-shrink: 0;
+            background-color: #f3f4f6; /* gray-100 */
+            border-right: 2px solid #d1d5db; /* gray-300 */
+            display: flex;
+            flex-direction: column;
+        }
+        .signal-labels-body {
+            flex-grow: 1;
+            overflow: auto;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none;  /* IE and Edge */
+        }
+        .signal-labels-body::-webkit-scrollbar {
+            display: none; /* Hide scrollbar for Chrome, Safari, and Opera */
+        }
+        .signal-label-header, .signal-label-row {
+            height: 50px;
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .signal-label-header {
+            height: 25px;
+            border-bottom: 1px solid #d1d5db; /* gray-300 */
+            color: #4b5563; /* gray-600 */
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .signal-label-row {
+            border-bottom: 1px solid #e5e7eb; /* gray-200 */
+            color: #1f2937; /* gray-800 */
+            font-size: 0.875rem;
+            cursor: pointer;
+        }
+        .signal-label-row.selected-row {
+            background-color: #e5e7eb; /* gray-200 */
+        }
+        .signal-name-col, .range-col {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding: 0 0.5rem;
+            flex-shrink: 0; /* Prevents flex items from shrinking */
+        }
+        .col-resizer {
+            width: 5px;
+            background-color: transparent;
+            cursor: col-resize;
+            flex-shrink: 0;
+            transition: background-color 0.2s;
+        }
+        .col-resizer:hover {
+             background-color: #4338ca;
+        }
+        .canvas-wrapper {
+            flex-grow: 1;
+            overflow: auto;
+        }
+        .table-wrapper {
+            overflow-y: auto;
+            position: relative;
+            flex-grow: 1; /* This will make it fill the remaining space */
+            min-height: 0; /* Prevent flexbox overflow issues */
+        }
+        table {
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #d1d5db; /* gray-300 */
+            padding: 0.5rem;
+            text-align: center;
+            white-space: nowrap;
+        }
+        th {
+            background-color: #f3f4f6; /* gray-100 */
+            color: #1f2937; /* gray-800 */
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        td {
+             background-color: #ffffff;
+        }
+        .signal-input {
+            background-color: transparent;
+            color: #1f2937; /* gray-800 */
+            border: none;
+            width: 100%;
+            text-align: left;
+            padding: 0;
+        }
+        .signal-input:focus {
+            outline: 1px solid #3b82f6;
+            background-color: #eff6ff;
+        }
+        .value-cell:focus {
+            outline: 2px solid #3b82f6;
+            background-color: #eff6ff;
+        }
+        .value-cell.selected {
+            background-color: #dbeafe;
+            outline: 2px solid #60a5fa;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f3f4f6; /* gray-100 */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d1d5db; /* gray-300 */
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af; /* gray-400 */
+        }
+        .btn-active {
+            background-color: #2563eb !important;
+            box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #93c5fd;
+        }
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+            width: 90%;
+            max-width: 400px;
+        }
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        .modal-content label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+         .modal-content input[type="number"], .modal-content input[type="password"], .modal-content input[type="text"], .modal-content select, .modal-content textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+        }
+         .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .fsm-state-entry {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .fsm-state-entry input:first-child {
+            flex-grow: 1;
+        }
+        .fsm-state-entry input:last-child {
+            width: 80px;
+        }
+        /* New Button Styles */
+        .control-btn {
+            background-color: #3B82F6;
+            color: white;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.5rem;
+            transition: background-color 0.2s;
+        }
+        .control-btn:hover {
+            background-color: #2563EB;
+        }
+        .control-btn i {
+            font-size: 1.25rem; /* text-xl */
+        }
+        .ai-add-btn {
+             background-color: #3B82F6;
+             color: white;
+             padding: 0.25rem;
+             border-radius: 0.25rem;
+             transition: background-color 0.2s;
+        }
+        .ai-add-btn:hover {
+            background-color: #2563EB;
+        }
+    </style>
+</head>
+<body class="text-gray-800 flex flex-col">
+
+    <!-- Header & Controls -->
+    <header class="bg-white p-2 border-b border-gray-200 shadow-lg z-20 flex items-center space-x-2 flex-wrap">
+        <div class="flex items-center gap-2 mr-4">
+            <div class="w-10 h-10 rounded-full flex items-center justify-center" style="background-color: #3B82F6;">
+                <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="38" cy="50" r="18" fill="white"/>
+                    <circle cx="62" cy="50" r="18" fill="white"/>
+                    <text x="38" y="57" font-family="Inter, sans-serif" font-size="28" font-weight="bold" text-anchor="middle" fill="#3B82F6">S</text>
+                    <text x="62" y="57" font-family="Inter, sans-serif" font-size="28" font-weight="bold" text-anchor="middle" fill="#3B82F6">S</text>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold" style="color: #3B82F6;">WAVECRAFT</h1>
+        </div>
+        <button id="addSignalBtn" class="control-btn" title="Add Signal">
+            <i class="ph ph-plus-circle"></i>
+        </button>
+        <button id="addTimeStepBtn" class="control-btn" title="Add Timestep">
+            <i class="ph ph-timer"></i>
+        </button>
+        <button id="fitToScreenBtn" class="control-btn" title="Fit to Screen">
+            <i class="ph ph-arrows-out"></i>
+        </button>
+        <button id="selectCellsBtn" class="control-btn" title="Select Cells">
+            <i class="ph ph-selection-background"></i>
+        </button>
+        <button id="aiBtn" class="control-btn" title="AI Generate">
+            <i class="ph ph-sparkle"></i>
+        </button>
+        <button id="importCsvBtn" class="control-btn" title="Import CSV">
+            <i class="ph ph-file-arrow-up"></i>
+        </button>
+        <input type="file" id="csv-file-input" class="hidden" accept=".csv">
+        <button id="saveCsvBtn" class="control-btn" title="Save CSV">
+            <i class="ph ph-file-arrow-down"></i>
+        </button>
+        <button id="clearDataBtn" class="control-btn" title="Clear Data">
+            <i class="ph ph-trash"></i>
+        </button>
+
+        <div class="h-6 w-px bg-gray-300 mx-2"></div> <!-- Vertical Separator -->
+        
+        <button id="prevEdgeBtn" class="control-btn" title="Previous Edge">
+            <i class="ph ph-arrow-line-left"></i>
+        </button>
+        <button id="nextEdgeBtn" class="control-btn" title="Next Edge">
+            <i class="ph ph-arrow-line-right"></i>
+        </button>
+
+         <!-- Value Toolbar -->
+        <div id="value-dropdown" class="hidden flex items-center space-x-2 ml-4">
+            <span class="text-sm font-medium text-gray-500">Set Value:</span>
+            <div class="flex items-center bg-white border border-gray-300 rounded-lg p-1 space-x-1">
+                <button data-value="1" class="w-8 h-8 flex items-center justify-center font-mono font-bold text-lg rounded-md hover:bg-blue-100 transition-colors">1</button>
+                <button data-value="0" class="w-8 h-8 flex items-center justify-center font-mono font-bold text-lg rounded-md hover:bg-blue-100 transition-colors">0</button>
+                <button data-value="X" class="w-8 h-8 flex items-center justify-center font-mono font-bold text-lg text-red-500 rounded-md hover:bg-blue-100 transition-colors">X</button>
+                <button data-value="Z" class="w-8 h-8 flex items-center justify-center font-mono font-bold text-lg text-amber-500 rounded-md hover:bg-blue-100 transition-colors">Z</button>
+            </div>
+        </div>
+        <div class="flex-grow"></div> <!-- Spacer -->
+        <div class="flex items-center space-x-2">
+            <label for="scan-field" class="text-sm font-medium text-gray-500">Cursor Time:</label>
+            <input type="text" id="scan-field" readonly class="bg-gray-100 text-gray-800 text-center rounded-md py-1 px-2 w-24 border border-gray-300 focus:outline-none">
+        </div>
+         <div class="flex items-center space-x-2">
+            <label for="delta-field" class="text-sm font-medium text-gray-500">Delta:</label>
+            <input type="text" id="delta-field" readonly class="bg-gray-100 text-gray-800 text-center rounded-md py-1 px-2 w-24 border border-gray-300 focus:outline-none">
+        </div>
+    </header>
+
+    <!-- Main Content: Canvas (Top) + Table (Bottom) -->
+    <div class="main-container">
+        
+        <!-- Top Panel: Labels and Canvas -->
+        <div class="top-panel">
+            <div id="signal-labels" class="signal-labels">
+                <!-- Signal labels will be generated here -->
+            </div>
+            <div id="canvas-wrapper" class="canvas-wrapper">
+                <canvas id="waveformCanvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Resizer -->
+        <div id="resizer" class="h-2 bg-gray-300 hover:bg-indigo-500 cursor-row-resize transition-colors"></div>
+
+        <!-- Bottom: Data Table -->
+        <div id="table-wrapper" class="table-wrapper">
+            <table id="waveformTable" class="w-full">
+                <colgroup>
+                    <col id="col-signal-name">
+                    <col id="col-range">
+                </colgroup>
+                <thead id="table-header">
+                    <!-- Header generated by JS -->
+                </thead>
+                <tbody id="table-body">
+                    <!-- Body generated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+    
+    <!-- Custom Context Menu for Signal Name -->
+    <div id="context-menu" class="hidden absolute bg-white border border-gray-300 rounded-md shadow-lg p-2 text-sm z-50"></div>
+    
+    <!-- Signal Generation Context Menu -->
+    <div id="signal-context-menu" class="hidden absolute bg-white border border-gray-300 rounded-md shadow-lg z-50 text-sm">
+        <div class="p-2 hover:bg-gray-100 cursor-pointer" id="generate-clock">Generate Clock...</div>
+        <div class="p-2 hover:bg-gray-100 cursor-pointer" id="generate-reset">Generate Reset...</div>
+        <div class="p-2 hover:bg-gray-100 cursor-pointer" id="generate-fsm">Generate FSM...</div>
+    </div>
+
+    <!-- Generator Modal -->
+    <div id="generator-modal-overlay" class="modal-overlay hidden">
+        <div class="modal">
+            <h3 id="generator-modal-title" class="modal-title">Generate Signal</h3>
+            <div id="generator-modal-content" class="modal-content">
+                <!-- Dynamic content goes here -->
+            </div>
+            <div id="generator-modal-actions" class="modal-actions">
+                <button id="generator-cancel-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button id="generator-apply-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Generate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Modal -->
+    <div id="ai-modal-overlay" class="modal-overlay hidden">
+        <div class="modal" style="max-width: 500px;">
+            <h3 class="modal-title">Generate Waveform with AI</h3>
+            <div class="modal-content">
+                <label for="api-key-input">OpenAI API Key:</label>
+                <input type="password" id="api-key-input" placeholder="Enter your OpenAI API key">
+
+                <label for="ai-design-name">Design Name:</label>
+                <input type="text" id="ai-design-name" placeholder="e.g., 4-bit Counter">
+
+                <div class="flex justify-between items-center mb-2">
+                    <label>Signals:</label>
+                    <button id="ai-add-signal-btn" class="ai-add-btn" title="Add Signal Field">
+                        <i class="ph ph-plus"></i>
+                    </button>
+                </div>
+                <div id="ai-signals-container">
+                    <!-- Signal rows will be added here by JS -->
+                </div>
+
+                <div class="flex justify-between items-center mb-2 mt-4">
+                    <label>Scenarios:</label>
+                     <button id="ai-add-scenario-btn" class="ai-add-btn" title="Add Scenario Field">
+                        <i class="ph ph-plus"></i>
+                    </button>
+                </div>
+                <div id="ai-scenarios-container">
+                    <!-- Scenario textareas will be added here by JS -->
+                </div>
+                
+                <label for="ai-response-field" class="mt-4">AI Response:</label>
+                <textarea id="ai-response-field" rows="6" readonly class="bg-gray-100 cursor-not-allowed w-full p-2 border border-gray-300 rounded-md font-mono text-xs" placeholder="The raw CSV response from the AI will appear here..."></textarea>
+                <div id="ai-status" class="text-sm text-gray-500 h-4 mt-2"></div>
+            </div>
+            <div class="modal-actions">
+                <button id="ai-cancel-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Cancel</button>
+                <button id="ai-apply-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Generate</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('waveformCanvas');
+            const ctx = canvas.getContext('2d');
+            const tableHeader = document.getElementById('table-header');
+            const tableBody = document.getElementById('table-body');
+            const addSignalBtn = document.getElementById('addSignalBtn');
+            const addTimeStepBtn = document.getElementById('addTimeStepBtn');
+            const canvasWrapper = document.getElementById('canvas-wrapper');
+            const tableWrapper = document.getElementById('table-wrapper');
+            const signalLabels = document.getElementById('signal-labels');
+            const mainContainer = document.querySelector('.main-container');
+            const topPanel = document.querySelector('.top-panel');
+            const resizer = document.getElementById('resizer');
+            const contextMenu = document.getElementById('context-menu');
+            const fitToScreenBtn = document.getElementById('fitToScreenBtn');
+            const selectCellsBtn = document.getElementById('selectCellsBtn');
+            const valueDropdown = document.getElementById('value-dropdown');
+            const scanField = document.getElementById('scan-field');
+            const deltaField = document.getElementById('delta-field');
+            const saveCsvBtn = document.getElementById('saveCsvBtn');
+            const importCsvBtn = document.getElementById('importCsvBtn');
+            const csvFileInput = document.getElementById('csv-file-input');
+            const clearDataBtn = document.getElementById('clearDataBtn');
+            const aiBtn = document.getElementById('aiBtn');
+            const prevEdgeBtn = document.getElementById('prevEdgeBtn');
+            const nextEdgeBtn = document.getElementById('nextEdgeBtn');
+
+            // Signal Gen elements
+            const signalContextMenu = document.getElementById('signal-context-menu');
+            const generatorModalOverlay = document.getElementById('generator-modal-overlay');
+            const generatorModalTitle = document.getElementById('generator-modal-title');
+            const generatorModalContent = document.getElementById('generator-modal-content');
+            const generatorApplyBtn = document.getElementById('generator-apply-btn');
+            const generatorCancelBtn = document.getElementById('generator-cancel-btn');
+
+            // AI Modal elements
+            const aiModalOverlay = document.getElementById('ai-modal-overlay');
+            const aiCancelBtn = document.getElementById('ai-cancel-btn');
+            const aiApplyBtn = document.getElementById('ai-apply-btn');
+            const aiStatus = document.getElementById('ai-status');
+
+            let signalLabelsBody = null;
+
+            // --- Configuration ---
+            const ROW_HEIGHT = 50;
+            let TIMESTEP_WIDTH = 60; // Changed to let for zooming
+            const TOP_MARGIN = 25;
+            const COLORS = {
+                background: '#ffffff', grid: '#e5e7eb', line: '#3b82f6',
+                text: '#6b7280', unknown: '#ef4444', highZ: '#f59e0b', bus: '#10b981',
+            };
+            const FONT = '12px Inter';
+
+            let signals = [];
+            let timeStepCount = 0;
+            let signalNameColWidth = 120;
+            let rangeColWidth = 80;
+            
+            // --- Selection State ---
+            let isSelectionMode = false;
+            let selectedCells = new Set();
+            let isDragging = false;
+            let startCell = null;
+            let endCell = null;
+            
+            // --- Marker State ---
+            let markerTime = null;
+            let marker2Time = null;
+
+            // --- Generator State ---
+            let activeSignalIndexForGeneration = null;
+            
+            // --- Row Selection State ---
+            let selectedSignalIndex = null;
+
+
+            const createSignal = (name, range, values) => ({ name, range, values, id: Math.random().toString(36).substr(2, 9) });
+
+            const render = () => {
+                renderCanvas();
+                renderTable();
+                renderSignalLabels();
+            };
+
+            const renderCanvas = () => {
+                const canvasWidth = timeStepCount * TIMESTEP_WIDTH;
+                const canvasHeight = signals.length * ROW_HEIGHT + TOP_MARGIN;
+                canvas.width = canvasWidth > canvasWrapper.clientWidth ? canvasWidth : canvasWrapper.clientWidth;
+                canvas.height = canvasHeight;
+
+                ctx.fillStyle = COLORS.background;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // --- Draw selected row highlight ---
+                if (selectedSignalIndex !== null) {
+                    ctx.fillStyle = '#f3f4f6'; // gray-100, a light gray
+                    const y = selectedSignalIndex * ROW_HEIGHT + TOP_MARGIN;
+                    ctx.fillRect(0, y, canvas.width, ROW_HEIGHT);
+                }
+
+                ctx.strokeStyle = COLORS.grid;
+                ctx.lineWidth = 1;
+                ctx.font = FONT;
+
+                for (let i = 0; i <= timeStepCount; i++) {
+                    const x = i * TIMESTEP_WIDTH;
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, canvas.height);
+                    ctx.stroke();
+                    if (i < timeStepCount) {
+                         ctx.fillStyle = COLORS.text;
+                         ctx.textAlign = 'center';
+                         ctx.fillText(i.toString(), x + TIMESTEP_WIDTH / 2, 15);
+                    }
+                }
+
+                for (let i = 0; i <= signals.length; i++) {
+                    const y = i * ROW_HEIGHT + TOP_MARGIN;
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(canvas.width, y);
+                    ctx.stroke();
+                }
+
+                signals.forEach((signal, index) => {
+                    const y = index * ROW_HEIGHT + TOP_MARGIN;
+                    drawWave(signal, y);
+                });
+
+                // --- Draw Markers ---
+                if (markerTime !== null) {
+                    const markerX = markerTime * TIMESTEP_WIDTH;
+                    ctx.strokeStyle = '#f59e0b'; // Amber-500
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(markerX, 0);
+                    ctx.lineTo(markerX, canvas.height);
+                    ctx.stroke();
+                }
+                 if (marker2Time !== null) {
+                    const markerX = marker2Time * TIMESTEP_WIDTH;
+                    ctx.strokeStyle = '#22c55e'; // Green-500
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(markerX, 0);
+                    ctx.lineTo(markerX, canvas.height);
+                    ctx.stroke();
+                }
+            };
+            
+            const renderSignalLabels = () => {
+                signalLabels.style.width = `${signalNameColWidth + rangeColWidth + 5}px`;
+                signalLabels.innerHTML = '';
+
+                const header = document.createElement('div');
+                header.className = 'signal-label-header';
+                header.innerHTML = `
+                    <div class="signal-name-col" style="width: ${signalNameColWidth}px; min-width: ${signalNameColWidth}px;">Signal Name</div>
+                    <div class="col-resizer" data-resize-col="name"></div>
+                    <div class="range-col text-center" style="width: ${rangeColWidth}px; min-width: ${rangeColWidth}px;">Range</div>
+                `;
+                signalLabels.appendChild(header);
+
+                const body = document.createElement('div');
+                body.className = 'signal-labels-body';
+                signalLabels.appendChild(body);
+                signalLabelsBody = body;
+
+                signals.forEach((signal, index) => {
+                    const labelRow = document.createElement('div');
+                    labelRow.className = 'signal-label-row';
+                    if (index === selectedSignalIndex) {
+                        labelRow.classList.add('selected-row');
+                    }
+                    labelRow.innerHTML = `
+                        <div class="signal-name-col" style="width: ${signalNameColWidth}px; min-width: ${signalNameColWidth}px;" title="${signal.name}">${signal.name}</div>
+                        <div class="range-col text-center" style="width: ${rangeColWidth}px; min-width: ${rangeColWidth}px;">${signal.range}</div>
+                    `;
+                    body.appendChild(labelRow);
+                });
+            };
+
+            const renderTable = () => {
+                document.getElementById('col-signal-name').style.width = `${signalNameColWidth}px`;
+                document.getElementById('col-range').style.width = `${rangeColWidth}px`;
+                tableHeader.innerHTML = '';
+                tableBody.innerHTML = '';
+                
+                const headerRow = document.createElement('tr');
+                headerRow.innerHTML = `
+                    <th class="sticky left-0 z-10" style="width: ${signalNameColWidth}px; min-width: ${signalNameColWidth}px;">Signal Name</th>
+                    <th style="width: ${rangeColWidth}px; min-width: ${rangeColWidth}px;">Range</th>
+                `;
+                for(let i=0; i < timeStepCount; i++) {
+                    headerRow.innerHTML += `<th>${i}</th>`;
+                }
+                tableHeader.appendChild(headerRow);
+
+                signals.forEach((signal, signalIndex) => {
+                    const row = document.createElement('tr');
+                    
+                    row.innerHTML = `
+                        <td class="sticky left-0 z-0" style="width: ${signalNameColWidth}px; min-width: ${signalNameColWidth}px;"><input type="text" value="${signal.name}" data-signal-index="${signalIndex}" data-type="name" class="signal-input"></td>
+                        <td style="width: ${rangeColWidth}px; min-width: ${rangeColWidth}px;"><input type="text" value="${signal.range}" data-signal-index="${signalIndex}" data-type="range" class="signal-input text-center"></td>
+                    `;
+                    
+                    signal.values.forEach((val, timeIndex) => {
+                         const cell = document.createElement('td');
+                         cell.setAttribute('contenteditable', !isSelectionMode);
+                         cell.className = 'value-cell';
+                         cell.textContent = val;
+                         cell.dataset.signalIndex = signalIndex;
+                         cell.dataset.timeIndex = timeIndex;
+                         row.appendChild(cell);
+                    });
+                    tableBody.appendChild(row);
+                });
+            };
+
+            const parseValue = (valStr) => {
+                if (typeof valStr !== 'string') return { value: valStr, delay: 0 };
+                const match = valStr.match(/^(.*)\((\d*\.?\d+)\)$/);
+                if (match && match[1] !== '' && !isNaN(parseFloat(match[2]))) {
+                    let delay = parseFloat(match[2]);
+                    delay = Math.max(0, Math.min(0.99, delay)); // Clamp delay
+                    return { value: match[1].trim(), delay: delay };
+                }
+                return { value: valStr, delay: 0 };
+            };
+
+            const drawWave = (signal, y) => {
+                const yHigh = y + (ROW_HEIGHT * 0.2);
+                const yLow = y + (ROW_HEIGHT * 0.8);
+                const yMid = y + (ROW_HEIGHT * 0.5);
+                const yLevel = (val) => val === '1' ? yHigh : (val === '0' ? yLow : yMid);
+
+                if (signal.range.trim() !== '' && signal.range.includes(':')) {
+                    drawBusWave(signal, y);
+                    return;
+                }
+
+                // Build points of transition
+                const points = [];
+                if (timeStepCount > 0) {
+                    let initialParse = parseValue(signal.values[0]);
+                    points.push({ t: initialParse.delay, val: initialParse.value });
+
+                    for (let i = 1; i < timeStepCount; i++) {
+                        let prevParse = parseValue(signal.values[i-1]);
+                        let currParse = parseValue(signal.values[i]);
+                        if (currParse.value !== prevParse.value) {
+                            points.push({ t: i + currParse.delay, val: currParse.value });
+                        }
+                    }
+                    points.push({ t: timeStepCount, val: parseValue(signal.values[timeStepCount - 1]).value });
+                }
+
+                // Draw waveform from points
+                for (let i = 0; i < points.length - 1; i++) {
+                    const startPoint = points[i];
+                    const endPoint = points[i+1];
+                    const startVal = startPoint.val.toUpperCase();
+                    
+                    const xStart = startPoint.t * TIMESTEP_WIDTH;
+                    const xEnd = endPoint.t * TIMESTEP_WIDTH;
+                    
+                    ctx.strokeStyle = COLORS.line;
+                    ctx.lineWidth = 2;
+                    
+                    if (startVal === '1' || startVal === '0') {
+                        const y = yLevel(startVal);
+                        ctx.beginPath();
+                        ctx.moveTo(xStart, y);
+                        ctx.lineTo(xEnd, y);
+                        ctx.stroke();
+                    } else if (startVal === 'X') {
+                        ctx.fillStyle = COLORS.unknown;
+                        ctx.fillRect(xStart, yHigh, xEnd - xStart, yLow - yHigh);
+                    } else if (startVal === 'Z') {
+                        ctx.strokeStyle = COLORS.highZ;
+                        ctx.beginPath();
+                        ctx.moveTo(xStart, yMid);
+                        ctx.lineTo(xEnd, yMid);
+                        ctx.stroke();
+                    }
+                    
+                    // Draw vertical transition line
+                    const endVal = endPoint.val.toUpperCase();
+                    if (startVal !== endVal) {
+                        const y1 = yLevel(startVal);
+                        const y2 = yLevel(endVal);
+                        ctx.strokeStyle = COLORS.line;
+                        ctx.beginPath();
+                        ctx.moveTo(xEnd, y1);
+                        ctx.lineTo(xEnd, y2);
+                        ctx.stroke();
+                    }
+                }
+            };
+
+            const drawBusWave = (signal, y) => {
+                const yTop = y + (ROW_HEIGHT * 0.25);
+                const yBottom = y + (ROW_HEIGHT * 0.75);
+                const yMid = y + (ROW_HEIGHT * 0.5);
+
+                const points = [];
+                 if (timeStepCount > 0) {
+                    let initialParse = parseValue(signal.values[0]);
+                    points.push({ t: initialParse.delay, val: initialParse.value });
+
+                    for (let i = 1; i < timeStepCount; i++) {
+                        let prevParse = parseValue(signal.values[i-1]);
+                        let currParse = parseValue(signal.values[i]);
+                        if (currParse.value !== prevParse.value) {
+                            points.push({ t: i + currParse.delay, val: currParse.value });
+                        }
+                    }
+                    points.push({ t: timeStepCount, val: parseValue(signal.values[timeStepCount - 1]).value });
+                }
+
+                for (let i = 0; i < points.length - 1; i++) {
+                     const startPoint = points[i];
+                    const endPoint = points[i+1];
+                    const startVal = startPoint.val.toUpperCase();
+                    
+                    const xStart = startPoint.t * TIMESTEP_WIDTH;
+                    const xEnd = endPoint.t * TIMESTEP_WIDTH;
+
+                    switch(startVal) {
+                        case 'X':
+                            ctx.fillStyle = COLORS.unknown;
+                            ctx.fillRect(xStart, yTop, xEnd - xStart, yBottom - yTop);
+                            break;
+                        case 'Z':
+                            ctx.strokeStyle = COLORS.highZ;
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.moveTo(xStart, yMid);
+                            ctx.lineTo(xEnd, yMid);
+                            ctx.stroke();
+                            break;
+                        default:
+                            ctx.strokeStyle = COLORS.bus;
+                            ctx.lineWidth = 2;
+                            ctx.beginPath();
+                            ctx.moveTo(xStart, yTop); ctx.lineTo(xEnd, yTop);
+                            ctx.moveTo(xStart, yBottom); ctx.lineTo(xEnd, yBottom);
+                            ctx.stroke();
+
+                            ctx.fillStyle = COLORS.text;
+                            ctx.textAlign = 'center';
+                             if ((startVal || '').trim() !== '') {
+                                const runWidth = xEnd - xStart;
+                                if (ctx.measureText(startVal).width < runWidth - 10) {
+                                    ctx.fillText(startVal, xStart + runWidth / 2, yMid + 5);
+                                }
+                            }
+                            break;
+                    }
+                    
+                    const endVal = endPoint.val.toUpperCase();
+                    if (startVal !== endVal) {
+                        ctx.strokeStyle = COLORS.bus;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(xEnd + 2, yTop - 2); ctx.lineTo(xEnd - 2, yBottom + 2);
+                        ctx.moveTo(xEnd - 2, yTop - 2); ctx.lineTo(xEnd + 2, yBottom + 2);
+                        ctx.stroke();
+                    }
+                }
+            };
+            
+            addSignalBtn.addEventListener('click', () => {
+                signals.push(createSignal('new_signal', '', Array(timeStepCount).fill('0')));
+                render();
+            });
+
+            addTimeStepBtn.addEventListener('click', () => {
+                signals.forEach(s => s.values.push(s.values[s.values.length-1] || '0'));
+                timeStepCount++;
+                render();
+            });
+            
+            tableBody.addEventListener('input', (e) => {
+                if (isSelectionMode) return;
+                const target = e.target;
+                const signalIndex = target.dataset.signalIndex;
+                if (signalIndex === undefined) return;
+                
+                if (target.dataset.timeIndex !== undefined) {
+                    signals[signalIndex].values[target.dataset.timeIndex] = target.textContent;
+                } else if (target.dataset.type === 'name') {
+                    signals[signalIndex].name = target.value;
+                    renderSignalLabels();
+                } else if (target.dataset.type === 'range') {
+                     signals[signalIndex].range = target.value;
+                     renderSignalLabels();
+                }
+                renderCanvas();
+            });
+            
+            tableBody.addEventListener('focusout', (e) => {
+                 if (e.target.dataset.type === 'range') render();
+            });
+
+            let isSyncing = false;
+            const syncScroll = (scroller) => {
+                if (isSyncing) return;
+                isSyncing = true;
+                const { scrollTop, scrollLeft } = scroller;
+                [canvasWrapper, tableWrapper, signalLabelsBody].forEach(el => {
+                    if (el && el !== scroller) {
+                        el.scrollTop = scrollTop;
+                        if (el !== signalLabelsBody) el.scrollLeft = scrollLeft;
+                    }
+                });
+                requestAnimationFrame(() => { isSyncing = false; });
+            };
+
+            canvasWrapper.addEventListener('scroll', () => syncScroll(canvasWrapper));
+            tableWrapper.addEventListener('scroll', () => syncScroll(tableWrapper));
+            signalLabels.addEventListener('scroll', (e) => {
+                if (e.target === signalLabelsBody) syncScroll(signalLabelsBody);
+            }, true);
+
+            const addResizerLogic = () => {
+                let isResizing = false;
+                resizer.addEventListener('mousedown', () => { isResizing = true; document.body.style.userSelect = 'none'; document.body.style.cursor = 'row-resize'; });
+                const onMouseMove = (moveEvent) => {
+                    if (!isResizing) return;
+                    const mainRect = mainContainer.getBoundingClientRect();
+                    let newTopHeight = moveEvent.clientY - mainRect.top;
+                    const minHeight = 40, snapThreshold = 20;
+                    if (newTopHeight < snapThreshold) newTopHeight = 0;
+                    else if (mainRect.height - newTopHeight < snapThreshold) newTopHeight = mainRect.height - resizer.offsetHeight;
+                    else {
+                        if (newTopHeight < minHeight) newTopHeight = minHeight;
+                        if (mainRect.height - newTopHeight < minHeight + resizer.offsetHeight) newTopHeight = mainRect.height - minHeight - resizer.offsetHeight;
+                    }
+                    topPanel.style.height = `${newTopHeight}px`;
+                };
+                const onMouseUp = () => { isResizing = false; document.body.style.userSelect = ''; document.body.style.cursor = ''; };
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            };
+            
+            const addColumnResizerLogic = () => {
+                let isResizing = false;
+                let startX, startWidth, startRangeWidth;
+
+                signalLabels.addEventListener('mousedown', (e) => {
+                    if (!e.target.classList.contains('col-resizer')) return;
+                    isResizing = true;
+                    startX = e.clientX;
+                    startWidth = signalNameColWidth;
+                    startRangeWidth = rangeColWidth;
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+
+                    const onMouseMove = (moveEvent) => {
+                        if (!isResizing) return;
+                        const dx = moveEvent.clientX - startX;
+                        const newNameWidth = startWidth + dx;
+                        const newRangeWidth = startRangeWidth - dx;
+
+                        if (newNameWidth > 60 && newRangeWidth > 40) {
+                            signalNameColWidth = newNameWidth;
+                            rangeColWidth = newRangeWidth;
+                            renderSignalLabels();
+                            renderTable();
+                        }
+                    };
+
+                    const onMouseUp = () => {
+                        isResizing = false;
+                        document.body.style.cursor = '';
+                        document.body.style.userSelect = '';
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                    };
+
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                });
+            };
+
+            const addContextMenuLogic = () => {
+                signalLabels.addEventListener('contextmenu', (e) => {
+                    const signalNameCol = e.target.closest('.signal-name-col');
+                    if (signalNameCol) {
+                        e.preventDefault();
+                        const fullName = signalNameCol.getAttribute('title');
+                        if (fullName) {
+                            contextMenu.textContent = fullName;
+                            contextMenu.style.top = `${e.clientY}px`;
+                            contextMenu.style.left = `${e.clientX}px`;
+                            contextMenu.classList.remove('hidden');
+                        }
+                    }
+                });
+
+                window.addEventListener('click', () => {
+                    contextMenu.classList.add('hidden');
+                    signalContextMenu.classList.add('hidden');
+                });
+
+                window.addEventListener('contextmenu', (e) => {
+                    if (!e.target.closest('.signal-name-col')) {
+                        contextMenu.classList.add('hidden');
+                    }
+                     if (!e.target.closest('td:first-child')) {
+                        signalContextMenu.classList.add('hidden');
+                    }
+                }, true);
+            };
+
+            const addZoomLogic = () => {
+                canvasWrapper.addEventListener('wheel', (e) => {
+                    if (e.ctrlKey) {
+                        e.preventDefault();
+                        const scrollLeft = canvasWrapper.scrollLeft;
+                        const oldCanvasWidth = timeStepCount * TIMESTEP_WIDTH;
+                        const pointerX = scrollLeft + e.clientX - canvasWrapper.getBoundingClientRect().left;
+                        const ratio = oldCanvasWidth > 0 ? pointerX / oldCanvasWidth : 0;
+                        const zoomIntensity = 0.1;
+                        const delta = e.deltaY > 0 ? (1 - zoomIntensity) : (1 + zoomIntensity);
+                        const newTimestepWidth = TIMESTEP_WIDTH * delta;
+
+                        if (newTimestepWidth > 10 && newTimestepWidth < 300) {
+                            TIMESTEP_WIDTH = newTimestepWidth;
+                            render();
+                            const newCanvasWidth = timeStepCount * TIMESTEP_WIDTH;
+                            const newScrollLeft = (ratio * newCanvasWidth) - (e.clientX - canvasWrapper.getBoundingClientRect().left);
+                            canvasWrapper.scrollLeft = newScrollLeft;
+                        }
+                    }
+                }, { passive: false });
+            };
+            
+            const addFitToScreenLogic = () => {
+                fitToScreenBtn.addEventListener('click', () => {
+                    if (timeStepCount > 0) {
+                        const availableWidth = canvasWrapper.clientWidth;
+                        const newTimestepWidth = availableWidth / timeStepCount;
+                        TIMESTEP_WIDTH = Math.max(10, newTimestepWidth);
+                        render();
+                    }
+                });
+            };
+            
+            const clearSelection = () => {
+                selectedCells.forEach(cell => cell.classList.remove('selected'));
+                selectedCells.clear();
+                valueDropdown.classList.add('hidden');
+            };
+
+            const addSelectionLogic = () => {
+                selectCellsBtn.addEventListener('click', () => {
+                    isSelectionMode = !isSelectionMode;
+                    selectCellsBtn.classList.toggle('btn-active');
+                    if (!isSelectionMode) {
+                        clearSelection();
+                    }
+                    renderTable(); // Re-render to toggle contenteditable
+                });
+                
+                tableBody.addEventListener('mousedown', (e) => {
+                    if (!isSelectionMode || !e.target.classList.contains('value-cell')) return;
+                    e.preventDefault();
+                    isDragging = true;
+                    startCell = e.target;
+
+                    if (!e.ctrlKey && !e.metaKey) {
+                        clearSelection();
+                    }
+                    
+                    if (selectedCells.has(startCell)) {
+                        selectedCells.delete(startCell);
+                        startCell.classList.remove('selected');
+                    } else {
+                        selectedCells.add(startCell);
+                        startCell.classList.add('selected');
+                    }
+                });
+
+                tableBody.addEventListener('mouseover', (e) => {
+                    if (!isDragging || !e.target.classList.contains('value-cell')) return;
+                    endCell = e.target;
+                    
+                    document.querySelectorAll('.value-cell').forEach(cell => {
+                         if(cell !== startCell) cell.classList.remove('selected');
+                    });
+                     
+                    selectedCells.forEach(c => c.classList.add('selected'));
+                    
+                    const startCoords = {
+                        row: parseInt(startCell.parentElement.rowIndex, 10),
+                        col: parseInt(startCell.cellIndex, 10)
+                    };
+                    const endCoords = {
+                        row: parseInt(endCell.parentElement.rowIndex, 10),
+                        col: parseInt(endCell.cellIndex, 10)
+                    };
+
+                    const minRow = Math.min(startCoords.row, endCoords.row);
+                    const maxRow = Math.max(startCoords.row, endCoords.row);
+                    const minCol = Math.min(startCoords.col, endCoords.col);
+                    const maxCol = Math.max(startCoords.col, endCoords.col);
+
+                    for (let i = minRow; i <= maxRow; i++) {
+                        for (let j = minCol; j <= maxCol; j++) {
+                            const cell = tableBody.rows[i-1]?.cells[j];
+                            if (cell && cell.classList.contains('value-cell')) {
+                                cell.classList.add('selected');
+                            }
+                        }
+                    }
+                });
+                
+                document.addEventListener('mouseup', (e) => {
+                    if (!isDragging) return;
+                    isDragging = false;
+                    
+                    document.querySelectorAll('.value-cell.selected').forEach(cell => {
+                        selectedCells.add(cell);
+                    });
+
+                    if (selectedCells.size > 0) {
+                        valueDropdown.classList.remove('hidden');
+                    } else {
+                        valueDropdown.classList.add('hidden');
+                    }
+                    startCell = null;
+                    endCell = null;
+                });
+
+                valueDropdown.addEventListener('click', (e) => {
+                    const button = e.target.closest('button');
+                    if (button && button.dataset.value) {
+                        const newValue = button.dataset.value;
+                        selectedCells.forEach(cell => {
+                            const signalIndex = cell.dataset.signalIndex;
+                            const timeIndex = cell.dataset.timeIndex;
+                            if (signalIndex !== undefined && timeIndex !== undefined) {
+                                signals[signalIndex].values[timeIndex] = newValue;
+                                cell.textContent = newValue;
+                            }
+                        });
+                        renderCanvas();
+                        clearSelection();
+                    }
+                });
+            };
+            
+             const updateDeltaField = () => {
+                if (markerTime !== null && marker2Time !== null) {
+                    const delta = Math.abs(marker2Time - markerTime);
+                    deltaField.value = delta.toFixed(2);
+                } else {
+                    deltaField.value = "";
+                }
+            };
+
+            const addMarkerLogic = () => {
+                canvasWrapper.addEventListener('mousedown', (e) => {
+                    if (isSelectionMode || e.target !== canvas) return;
+                    
+                    const x = e.offsetX;
+                    const currentTime = x / TIMESTEP_WIDTH;
+
+                    // e.buttons: 1=left, 2=right, 3=left+right
+                    if (e.buttons === 1) { // Left click
+                        markerTime = currentTime;
+                        scanField.value = markerTime.toFixed(2);
+                    } else if (e.buttons === 3) { // Left and Right click
+                        e.preventDefault(); // Prevent context menu
+                        marker2Time = currentTime;
+                    }
+                    
+                    updateDeltaField();
+                    renderCanvas();
+                });
+                
+                canvasWrapper.addEventListener('contextmenu', e => e.preventDefault());
+            };
+
+            const exportToCsv = () => {
+                let csvContent = "";
+                
+                const headers = ["Signal Name", "Range", ...Array.from({ length: timeStepCount }, (_, i) => i)];
+                csvContent += headers.join(",") + "\r\n";
+
+                signals.forEach(signal => {
+                    const row = [
+                        `"${signal.name.replace(/"/g, '""')}"`,
+                        `"${signal.range.replace(/"/g, '""')}"`,
+                        ...signal.values
+                    ];
+                    csvContent += row.join(",") + "\r\n";
+                });
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", "waveform_data.csv");
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const parseCsvAndRender = (csvText) => {
+                try {
+                    const newSignals = [];
+                    let newTimeStepCount = 0;
+                    // Sanitize the CSV text by removing ```csv and ``` markers
+                    const sanitizedCsv = csvText.replace(/```csv\n/g, '').replace(/```/g, '');
+                    const rows = sanitizedCsv.trim().split(/\r?\n/);
+                    if (rows.length < 1) {
+                        throw new Error("CSV file is empty or invalid.");
+                    }
+                    const header = rows[0].split(',');
+                    newTimeStepCount = Math.max(0, header.length - 2);
+                    for (let i = 1; i < rows.length; i++) {
+                        const cells = rows[i].split(',');
+                        if (cells.length < 2) continue;
+                        const name = cells[0].replace(/^"|"$/g, '').replace(/""/g, '"');
+                        const range = cells[1].replace(/^"|"$/g, '').replace(/""/g, '"');
+                        const values = cells.slice(2, 2 + newTimeStepCount);
+                        while(values.length < newTimeStepCount) {
+                            values.push('X');
+                        }
+                        newSignals.push(createSignal(name, range, values));
+                    }
+                    signals = newSignals;
+                    timeStepCount = newTimeStepCount;
+                    markerTime = null;
+                    marker2Time = null;
+                    scanField.value = "";
+                    deltaField.value = "";
+                    render();
+                } catch (error) {
+                     alert(`Failed to parse CSV: ${error.message}`);
+                }
+            };
+
+            const handleCsvImport = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => parseCsvAndRender(e.target.result);
+                reader.readAsText(file);
+                event.target.value = '';
+            };
+
+            const showConfirmationModal = (title, message, onConfirm) => {
+                generatorModalTitle.textContent = title;
+                generatorModalContent.innerHTML = `<p>${message}</p>`;
+
+                // Modify the existing button instead of replacing it
+                generatorApplyBtn.textContent = 'Confirm';
+                generatorApplyBtn.onclick = () => {
+                    onConfirm();
+                    hideGeneratorModal();
+                };
+                generatorModalOverlay.classList.remove('hidden');
+            };
+
+            // --- Signal Generation Logic ---
+            const hideGeneratorModal = () => {
+                generatorModalOverlay.classList.add('hidden');
+                // Reset the button to its default state after any modal action
+                generatorApplyBtn.textContent = 'Generate';
+                generatorApplyBtn.onclick = null;
+            };
+            
+            const setupClockModal = () => {
+                generatorModalTitle.textContent = 'Generate Clock';
+                generatorModalContent.innerHTML = `
+                    <label for="clock-period">Half Period (timesteps):</label>
+                    <input type="number" id="clock-period" value="1" min="1">
+                `;
+                generatorApplyBtn.textContent = 'Generate'; // Ensure correct button text
+                generatorApplyBtn.onclick = executeClockGeneration;
+                generatorModalOverlay.classList.remove('hidden');
+            };
+
+            const executeClockGeneration = () => {
+                const halfPeriod = parseInt(document.getElementById('clock-period').value, 10) || 1;
+                const signal = signals[activeSignalIndexForGeneration];
+                if (!signal) return;
+
+                const newValues = [];
+                for (let i = 0; i < timeStepCount; i++) {
+                    const value = Math.floor(i / halfPeriod) % 2 === 0 ? '0' : '1';
+                    newValues.push(value);
+                }
+                signal.values = newValues;
+                hideGeneratorModal();
+                render();
+            };
+
+            const setupResetModal = () => {
+                generatorModalTitle.textContent = 'Generate Reset';
+                 generatorModalContent.innerHTML = `
+                    <label for="reset-cycles">De-assert after # cycles:</label>
+                    <input type="number" id="reset-cycles" value="4" min="1">
+                    <label for="reset-edge">Trigger Edge:</label>
+                    <select id="reset-edge">
+                        <option value="posedge">Posedge</option>
+                        <option value="negedge">Negedge</option>
+                    </select>
+                `;
+                generatorApplyBtn.textContent = 'Generate'; // Ensure correct button text
+                generatorApplyBtn.onclick = executeResetGeneration;
+                generatorModalOverlay.classList.remove('hidden');
+            };
+            
+            const executeResetGeneration = () => {
+                const cycles = parseInt(document.getElementById('reset-cycles').value, 10) || 4;
+                const edge = document.getElementById('reset-edge').value;
+                const signal = signals[activeSignalIndexForGeneration];
+                const clkSignal = signals.find(s => s.name.toLowerCase() === 'clk');
+
+                if (!signal || !clkSignal) {
+                    alert('A clock signal named "clk" must exist to generate a reset.');
+                    return;
+                }
+
+                let edgeCount = 0;
+                let deassertIndex = -1;
+
+                for (let i = 1; i < timeStepCount; i++) {
+                    const prev = clkSignal.values[i-1];
+                    const curr = clkSignal.values[i];
+                    if (edge === 'posedge' && prev === '0' && curr === '1') {
+                        edgeCount++;
+                    } else if (edge === 'negedge' && prev === '1' && curr === '0') {
+                        edgeCount++;
+                    }
+                    if (edgeCount === cycles) {
+                        deassertIndex = i;
+                        break;
+                    }
+                }
+                
+                const newValues = signal.values.slice();
+                for (let i = 0; i < timeStepCount; i++) {
+                    // Assuming active low reset
+                    if (deassertIndex === -1 || i < deassertIndex) {
+                        newValues[i] = '0';
+                    } else {
+                        newValues[i] = '1';
+                    }
+                }
+                signal.values = newValues;
+                hideGeneratorModal();
+                render();
+            };
+
+            const setupFsmModal = () => {
+                generatorModalTitle.textContent = 'Generate FSM States';
+                generatorModalContent.innerHTML = `
+                    <label for="fsm-range">Range:</label>
+                    <input type="text" id="fsm-range" value="[7:0]">
+                    <label for="fsm-state-count">Number of States:</label>
+                    <input type="number" id="fsm-state-count" value="2" min="1">
+                    <div id="fsm-state-entries" class="mt-4"></div>
+                `;
+                const countInput = document.getElementById('fsm-state-count');
+                const entriesContainer = document.getElementById('fsm-state-entries');
+                
+                const updateStateInputs = () => {
+                    const count = parseInt(countInput.value, 10) || 0;
+                    entriesContainer.innerHTML = '';
+                    for (let i = 0; i < count; i++) {
+                        const div = document.createElement('div');
+                        div.className = 'fsm-state-entry';
+                        div.innerHTML = `
+                             <input type="text" class="fsm-state-name-input" placeholder="State ${i + 1} Name">
+                             <input type="number" class="fsm-state-cycle-input" value="1" min="1" title="Cycles">
+                        `;
+                        entriesContainer.appendChild(div);
+                    }
+                };
+                
+                countInput.addEventListener('input', updateStateInputs);
+                updateStateInputs(); // Initial call
+                
+                generatorApplyBtn.textContent = 'Generate'; // Ensure correct button text
+                generatorApplyBtn.onclick = executeFsmGeneration;
+                generatorModalOverlay.classList.remove('hidden');
+            };
+
+            const executeFsmGeneration = () => {
+                const signal = signals[activeSignalIndexForGeneration];
+                if (!signal) return;
+
+                const range = document.getElementById('fsm-range').value;
+                const stateEntries = document.querySelectorAll('.fsm-state-entry');
+                
+                const statePattern = Array.from(stateEntries).map(entry => {
+                    const nameInput = entry.querySelector('.fsm-state-name-input');
+                    const cycleInput = entry.querySelector('.fsm-state-cycle-input');
+                    return {
+                        name: nameInput.value || nameInput.placeholder,
+                        cycles: parseInt(cycleInput.value, 10) || 1
+                    };
+                }).filter(state => state.name.trim() !== '');
+                
+                if (statePattern.length === 0) {
+                    hideGeneratorModal();
+                    return;
+                }
+
+                const newValues = [];
+                let patternIndex = 0;
+                while (newValues.length < timeStepCount) {
+                    const currentState = statePattern[patternIndex % statePattern.length];
+                    for (let i = 0; i < currentState.cycles; i++) {
+                        if (newValues.length < timeStepCount) {
+                            newValues.push(currentState.name);
+                        } else {
+                            break;
+                        }
+                    }
+                    patternIndex++;
+                }
+
+                signal.values = newValues;
+                signal.range = range;
+                hideGeneratorModal();
+                render();
+            };
+
+            const addSignalContextMenuLogic = () => {
+                tableBody.addEventListener('contextmenu', (e) => {
+                    const firstCell = e.target.closest('td:first-child');
+                    if (firstCell) {
+                        e.preventDefault();
+                        const signalIndex = firstCell.querySelector('input').dataset.signalIndex;
+                        activeSignalIndexForGeneration = parseInt(signalIndex, 10);
+
+                        signalContextMenu.style.top = `${e.clientY}px`;
+                        signalContextMenu.style.left = `${e.clientX}px`;
+                        signalContextMenu.classList.remove('hidden');
+                    }
+                });
+                
+                document.getElementById('generate-clock').addEventListener('click', () => {
+                    signalContextMenu.classList.add('hidden');
+                    setupClockModal();
+                });
+                 document.getElementById('generate-reset').addEventListener('click', () => {
+                    signalContextMenu.classList.add('hidden');
+                    setupResetModal();
+                });
+                 document.getElementById('generate-fsm').addEventListener('click', () => {
+                    signalContextMenu.classList.add('hidden');
+                    setupFsmModal();
+                });
+                generatorCancelBtn.addEventListener('click', hideGeneratorModal);
+                generatorModalOverlay.addEventListener('click', (e) => {
+                    if (e.target === generatorModalOverlay) {
+                        hideGeneratorModal();
+                    }
+                });
+            };
+
+             const addAiLogic = () => {
+                const aiResponseField = document.getElementById('ai-response-field');
+                const aiAddSignalBtn = document.getElementById('ai-add-signal-btn');
+                const aiAddScenarioBtn = document.getElementById('ai-add-scenario-btn');
+
+                const addAiSignalRow = () => {
+                    const container = document.getElementById('ai-signals-container');
+                    const div = document.createElement('div');
+                    div.className = 'flex gap-2 mb-2 items-center';
+                    div.innerHTML = `
+                        <input type="text" class="ai-signal-name w-1/2 p-2 border border-gray-300 rounded-md" placeholder="Signal Name">
+                        <input type="text" class="ai-signal-range w-1/2 p-2 border border-gray-300 rounded-md" placeholder="Range (e.g., [3:0])">
+                    `;
+                    container.appendChild(div);
+                };
+
+                const addAiScenarioRow = () => {
+                    const container = document.getElementById('ai-scenarios-container');
+                    const div = document.createElement('div');
+                    div.className = 'mb-2';
+                    div.innerHTML = `<textarea class="ai-scenario-textarea w-full p-2 border border-gray-300 rounded-md" rows="2" placeholder="Describe a scenario..."></textarea>`;
+                    container.appendChild(div);
+                };
+
+                aiAddSignalBtn.addEventListener('click', addAiSignalRow);
+                aiAddScenarioBtn.addEventListener('click', addAiScenarioRow);
+
+                aiBtn.addEventListener('click', () => {
+                    document.getElementById('ai-signals-container').innerHTML = '';
+                    document.getElementById('ai-scenarios-container').innerHTML = '';
+                    addAiSignalRow();
+                    addAiSignalRow();
+                    addAiScenarioRow();
+                    aiResponseField.value = '';
+                    aiStatus.textContent = '';
+                    aiModalOverlay.classList.remove('hidden');
+                });
+                aiCancelBtn.addEventListener('click', () => {
+                    aiModalOverlay.classList.add('hidden');
+                });
+                aiModalOverlay.addEventListener('click', (e) => {
+                    if (e.target === aiModalOverlay) {
+                         aiModalOverlay.classList.add('hidden');
+                    }
+                });
+
+                aiApplyBtn.addEventListener('click', async () => {
+                    const apiKey = document.getElementById('api-key-input').value;
+                    const designName = document.getElementById('ai-design-name').value;
+                    
+                    const signalRows = document.querySelectorAll('#ai-signals-container > div');
+                    let signalsList = [];
+                    signalRows.forEach(row => {
+                        const name = row.querySelector('.ai-signal-name').value;
+                        const range = row.querySelector('.ai-signal-range').value;
+                        if (name) {
+                            signalsList.push({ name, range });
+                        }
+                    });
+
+                    const scenarioTextareas = document.querySelectorAll('.ai-scenario-textarea');
+                    let scenariosList = [];
+                    scenarioTextareas.forEach(textarea => {
+                        if (textarea.value) {
+                            scenariosList.push(textarea.value);
+                        }
+                    });
+                    
+                    aiResponseField.value = '';
+                    aiStatus.textContent = '';
+
+                    if (!apiKey || !designName || signalsList.length === 0 || scenariosList.length === 0) {
+                        aiStatus.textContent = 'All fields are required.';
+                        return;
+                    }
+                    
+                    const finalPrompt = `For a design named "${designName}", create a CSV of waveform data with the following signals: ${signalsList.map(s => `"${s.name}" (Range: ${s.range || '1-bit'})`).join(', ')}. The CSV must have these columns: "Signal Name", "Range", and then integer timesteps from 0 up to 20. Generate the signal values based on these scenarios, in order: ${scenariosList.map((s, i) => `Scenario ${i+1}: "${s}"`).join('; ')}. Allocate 10 timesteps for each scenario. Important: Your entire response must be only the raw CSV data, with no introduction, explanation, or markdown formatting like \`\`\`csv.`;
+
+                    aiStatus.textContent = 'Generating...';
+                    aiApplyBtn.disabled = true;
+
+                    const apiUrl = 'https://api.openai.com/v1/chat/completions';
+                    const payload = {
+                        model: "gpt-3.5-turbo",
+                        messages: [{
+                            role: "user",
+                            content: finalPrompt
+                        }]
+                    };
+
+                    try {
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${apiKey}`
+                            },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const result = await response.json();
+
+                        if (!response.ok) {
+                            throw new Error(result.error?.message || `API request failed with status ${response.status}`);
+                        }
+
+                        const csvText = result.choices?.[0]?.message?.content;
+
+                        if (csvText) {
+                            aiResponseField.value = csvText;
+                            parseCsvAndRender(csvText);
+                        } else {
+                             const errorText = "Invalid response format from AI. Full response:\n" + JSON.stringify(result, null, 2);
+                            aiResponseField.value = errorText;
+                            throw new Error("Invalid response format from AI.");
+                        }
+
+                    } catch (error) {
+                        aiStatus.textContent = `Error: ${error.message}`;
+                        aiResponseField.value = `Error: ${error.message}`;
+                    } finally {
+                        if(aiStatus.textContent === 'Generating...') {
+                           aiStatus.textContent = 'Done. You can close this window now.';
+                        }
+                        aiApplyBtn.disabled = false;
+                    }
+                });
+            };
+
+            const addSignalSelectionLogic = () => {
+                signalLabels.addEventListener('click', (e) => {
+                    const row = e.target.closest('.signal-label-row');
+                    if (row && signalLabelsBody) {
+                        const allRows = Array.from(signalLabelsBody.children);
+                        const index = allRows.indexOf(row);
+                        
+                        if (selectedSignalIndex === index) {
+                            selectedSignalIndex = null; // Deselect if clicked again
+                        } else {
+                            selectedSignalIndex = index;
+                        }
+                        renderCanvas();
+                        renderSignalLabels();
+                    }
+                });
+            };
+            
+            const addEdgeNavigationLogic = () => {
+                nextEdgeBtn.addEventListener('click', () => {
+                    if (selectedSignalIndex === null) return;
+                    
+                    const values = signals[selectedSignalIndex].values;
+                    const startTime = markerTime === null ? 0 : Math.floor(markerTime) + 1;
+
+                    for (let i = startTime; i < timeStepCount; i++) {
+                        if (i > 0 && values[i] !== values[i-1]) {
+                            markerTime = i;
+                            scanField.value = markerTime.toFixed(2);
+                            renderCanvas();
+                            return;
+                        }
+                    }
+                });
+
+                prevEdgeBtn.addEventListener('click', () => {
+                     if (selectedSignalIndex === null) return;
+                    
+                    const values = signals[selectedSignalIndex].values;
+                    const startTime = markerTime === null ? timeStepCount - 1 : Math.floor(markerTime - 0.01);
+
+                    for (let i = startTime; i >= 1; i--) {
+                         if (values[i] !== values[i-1]) {
+                            markerTime = i;
+                            scanField.value = markerTime.toFixed(2);
+                            renderCanvas();
+                            return;
+                        }
+                    }
+                });
+            };
+
+            timeStepCount = 15;
+            signals.push(createSignal('clk', '', ['0','1','0','1','0','1','0','1','0','1','0','1','0','1','0']));
+            signals.push(createSignal('a_very_long_signal_name_that_needs_resizing', '', ['0','0','1','1','1','0','0','0','1','1','0','0','0','0','0']));
+            signals.push(createSignal('addr', '[7:0]', ['0x10', '0x10', '0x2A', '0x2A', 'X', 'X', 'X', '0x2A', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE', '0xFE']));
+            signals.push(createSignal('rst_n', '', ['0','0','1','1','1','1','1','1','1','1','1','1','1','1','1']));
+            signals.push(createSignal('en', '', ['1', '1', 'z', 'z', 'z', '0', '0', 'x', 'x', '1', '1', '1', '1', '0', '0']));
+            
+            addResizerLogic();
+            addColumnResizerLogic();
+            addContextMenuLogic();
+            addZoomLogic();
+            addFitToScreenLogic();
+            addSelectionLogic();
+            addMarkerLogic();
+            addSignalContextMenuLogic();
+            addAiLogic();
+            addSignalSelectionLogic();
+            addEdgeNavigationLogic();
+            saveCsvBtn.addEventListener('click', exportToCsv);
+            importCsvBtn.addEventListener('click', () => csvFileInput.click());
+            csvFileInput.addEventListener('change', handleCsvImport);
+            clearDataBtn.addEventListener('click', () => {
+                showConfirmationModal(
+                    'Clear All Data',
+                    'Are you sure you want to delete all signals? This action cannot be undone.',
+                    () => {
+                        signals = [];
+                        timeStepCount = 0;
+                        markerTime = null;
+                        marker2Time = null;
+                        scanField.value = "";
+                        deltaField.value = "";
+                        render();
+                    }
+                );
+            });
+            render();
+        });
+    </script>
+</body>
+</html>

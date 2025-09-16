@@ -595,6 +595,10 @@
 
             // --- Edit State ---
             let valueOnFocus = '';
+            
+            // --- Zoom State ---
+            let isZoomDragging = false;
+            let zoomStartX = 0;
 
 
             const createSignal = (name, range, values) => ({ 
@@ -1173,14 +1177,62 @@
                         }
                     }
                 }, { passive: false });
+
+                let zoomStartX = 0;
+                let isZoomDragging = false;
+                
+                canvasWrapper.addEventListener('mousedown', (e) => {
+                    if (e.buttons === 1 && !isSelectionMode) { // Left click only, not in cell selection mode
+                         isZoomDragging = true;
+                         zoomStartX = e.offsetX;
+                         canvasWrapper.style.cursor = 'ew-resize';
+                    }
+                });
+                 canvasWrapper.addEventListener('mousemove', (e) => {
+                    if (isZoomDragging) {
+                        renderCanvas(); // Redraw base waveform
+                        const currentX = e.offsetX;
+                        ctx.fillStyle = 'rgba(59, 130, 246, 0.2)'; // semi-transparent blue
+                        ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
+                        ctx.lineWidth = 1;
+                        const rectX = Math.min(zoomStartX, currentX);
+                        const rectWidth = Math.abs(zoomStartX - currentX);
+                        ctx.fillRect(rectX, 0, rectWidth, canvas.height);
+                        ctx.strokeRect(rectX, 0, rectWidth, canvas.height);
+                    }
+                });
+                 window.addEventListener('mouseup', (e) => {
+                    if (isZoomDragging) {
+                        isZoomDragging = false;
+                        canvasWrapper.style.cursor = 'default';
+                        const zoomEndX = e.offsetX;
+                        const dragWidth = Math.abs(zoomEndX - zoomStartX);
+
+                        if (dragWidth < 10) { // If drag is too small, treat it as a click and ignore zoom
+                            renderCanvas();
+                            return; 
+                        }
+
+                        const currentScrollLeft = canvasWrapper.scrollLeft;
+                        const startTime = (Math.min(zoomStartX, zoomEndX) + currentScrollLeft) / TIMESTEP_WIDTH;
+                        const endTime = (Math.max(zoomStartX, zoomEndX) + currentScrollLeft) / TIMESTEP_WIDTH;
+                        
+                        const timeRange = endTime - startTime;
+                        
+                        if(timeRange > 0) {
+                            TIMESTEP_WIDTH = canvasWrapper.clientWidth / timeRange;
+                            render();
+                            canvasWrapper.scrollLeft = startTime * TIMESTEP_WIDTH;
+                        }
+                    }
+                });
             };
             
             const addFitToScreenLogic = () => {
                 fitToScreenBtn.addEventListener('click', () => {
                     if (timeStepCount > 0) {
-                        const availableWidth = canvasWrapper.clientWidth;
-                        const newTimestepWidth = availableWidth / timeStepCount;
-                        TIMESTEP_WIDTH = Math.max(10, newTimestepWidth);
+                        TIMESTEP_WIDTH = canvasWrapper.clientWidth / timeStepCount;
+                        TIMESTEP_WIDTH = Math.max(10, TIMESTEP_WIDTH);
                         render();
                     }
                 });
@@ -1301,7 +1353,7 @@
 
             const addMarkerLogic = () => {
                 canvasWrapper.addEventListener('mousedown', (e) => {
-                    if (isSelectionMode || e.target !== canvas) return;
+                    if (isSelectionMode || e.target !== canvas || isZoomDragging) return;
                     
                     const x = e.offsetX;
                     const currentTime = x / TIMESTEP_WIDTH;
@@ -2025,4 +2077,3 @@
     </script>
 </body>
 </html>
-

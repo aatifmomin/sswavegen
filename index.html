@@ -301,11 +301,13 @@
         .ai-textarea { resize: vertical; min-height: 52px; font-size: 11px; }
         .ai-select option { background: var(--surface); }
 
-        .ai-sig-row { display: flex; gap: 4px; margin-bottom: 4px; }
+        .ai-sig-row { display: flex; gap: 4px; margin-bottom: 4px; align-items: center; }
         .ai-sig-row input { background: var(--surface3); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 7px; font-family: var(--mono); font-size: 11px; color: var(--text); outline: none; }
         .ai-sig-row input:focus { border-color: var(--accent); background: var(--accent-light); }
         .ai-sig-row .sig-n { flex: 1; }
-        .ai-sig-row .sig-r { width: 68px; }
+        .ai-sig-row .sig-r { width: 62px; }
+        .sig-del-btn { flex-shrink: 0; width: 22px; height: 22px; background: transparent; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; color: var(--text3); font-size: 12px; display: flex; align-items: center; justify-content: center; transition: all 0.1s; }
+        .sig-del-btn:hover { background: var(--red-bg); border-color: var(--red); color: var(--red); }
 
         .ai-scenario-row { position: relative; margin-bottom: 6px; display: flex; gap: 4px; align-items: flex-start; }
         .ai-scenario-row textarea { flex: 1; background: var(--surface3); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 7px; font-family: var(--font); font-size: 11px; color: var(--text); outline: none; resize: vertical; min-height: 44px; }
@@ -502,6 +504,9 @@
             <div class="ai-panel-header">
                 <i class="ph ph-sparkle"></i>
                 <span>AI Assist</span>
+                <button class="ai-close-btn" id="aiSaveBtn" title="Save configuration to JSON file" style="width:auto;padding:0 6px;gap:3px;font-size:11px;"><i class="ph ph-floppy-disk"></i></button>
+                <button class="ai-close-btn" id="aiOpenBtn" title="Open configuration from JSON file" style="width:auto;padding:0 6px;gap:3px;font-size:11px;"><i class="ph ph-folder-open"></i></button>
+                <input type="file" id="ai-json-file-input" accept=".json" style="display:none;">
                 <button class="ai-close-btn" id="aiCloseBtn" title="Hide panel"><i class="ph ph-x"></i></button>
             </div>
             <div class="ai-panel-body" id="aiPanelBody">
@@ -542,7 +547,14 @@
                 <div class="ai-field-group">
                     <label class="ai-label">Signals</label>
                     <div id="ai-signals-container"></div>
-                    <button class="add-row-btn" id="ai-add-signal-btn"><i class="ph ph-plus"></i> Add Signal</button>
+                    <button class="add-row-btn" id="ai-add-signal-btn"><i class="ph ph-plus"></i> Add Signal Manually</button>
+                </div>
+
+                <!-- AI Signal Generator -->
+                <div class="ai-field-group" style="background:var(--accent-light);border:1px solid var(--accent-light2);border-radius:var(--radius);padding:8px;">
+                    <div style="font-size:10px;font-weight:700;color:var(--accent);letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:5px;"><i class="ph ph-sparkle"></i> Generate Signals via AI</div>
+                    <textarea class="ai-input" id="ai-signal-prompt" rows="2" style="font-size:11px;resize:none;background:#fff;" placeholder="e.g. Create all AXI4 master signals with correct widths&#10;e.g. Add APB protocol signals"></textarea>
+                    <button class="ai-run-btn" id="ai-gen-signals-btn" style="margin-top:6px;height:28px;font-size:11px;"><i class="ph ph-waveform"></i> Generate Signals</button>
                 </div>
 
                 <!-- Scenarios -->
@@ -595,52 +607,96 @@
 
 <!-- VERILOG RTL MODAL -->
 <div id="verilog-modal-overlay" class="modal-overlay hidden">
-    <div class="modal wide" style="max-width:760px;">
+    <div class="modal wide" style="max-width:820px;">
         <div class="modal-title"><i class="ph ph-code"></i>Verilog RTL Generator</div>
         <div id="verilog-stats" style="margin-bottom:12px;"></div>
         <div class="modal-tabs">
             <div class="modal-tab active" data-tab="config">Configuration</div>
             <div class="modal-tab" data-tab="module">Module</div>
-            <div class="modal-tab" data-tab="fsm">FSM</div>
             <div class="modal-tab" data-tab="tb">Testbench</div>
         </div>
+
+        <!-- CONFIG TAB -->
         <div id="tab-config" class="tab-panel active">
-            <div class="vg-row" style="margin-bottom:10px;">
-                <div>
+            <div class="vg-row" style="margin-bottom:10px;gap:10px;">
+                <div style="flex:1;">
                     <label>MODULE NAME</label>
                     <input type="text" id="verilog-module-name" placeholder="e.g., axi_slave">
                 </div>
             </div>
-            <label>RTL OPTIONS</label>
-            <div class="module-opt"><input type="checkbox" id="chk-always" checked><div><div class="module-opt-lbl">Sequential always block</div><div class="module-opt-desc">Generate clocked always @(posedge clk)</div></div></div>
-            <div class="module-opt"><input type="checkbox" id="chk-async-reset"><div><div class="module-opt-lbl">Asynchronous reset</div><div class="module-opt-desc">Use always @(posedge clk or negedge rst_n)</div></div></div>
-            <div class="module-opt"><input type="checkbox" id="chk-fsm" checked><div><div class="module-opt-lbl">FSM state machine</div><div class="module-opt-desc">Auto-detect named bus states → case statement</div></div></div>
-            <div class="module-opt"><input type="checkbox" id="chk-tb" checked><div><div class="module-opt-lbl">Generate testbench</div><div class="module-opt-desc">Create tb_module.v with waveform stimulus</div></div></div>
-            <div class="modal-actions" style="justify-content:flex-start; margin-top:12px; padding-top:0;">
-                <button class="btn-primary" id="verilog-generate-btn"><i class="ph ph-lightning"></i>&nbsp;Generate RTL</button>
+
+            <!-- API Generation Section -->
+            <div style="background:var(--accent-light);border:1px solid var(--accent-light2);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+                <div style="font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.4px;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:5px;">
+                    <i class="ph ph-sparkle"></i> Generate RTL via AI (Recommended)
+                </div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <div style="flex:1;">
+                        <label style="margin-top:0;">OPENAI API KEY</label>
+                        <input type="password" id="verilog-api-key" placeholder="sk-..." style="background:#fff;">
+                    </div>
+                    <div style="width:160px;">
+                        <label style="margin-top:0;">MODEL</label>
+                        <select id="verilog-model" style="background:#fff;">
+                            <option value="gpt-4o">GPT-4o</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                            <option value="gpt-3.5-turbo" selected>GPT-3.5 Turbo</option>
+                            <option value="custom">Custom...</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="verilog-model-custom-wrap" style="display:none;margin-bottom:8px;">
+                    <label style="margin-top:0;">CUSTOM MODEL NAME</label>
+                    <input type="text" id="verilog-model-custom" placeholder="e.g. gpt-4-0125-preview" style="background:#fff;">
+                </div>
+                <div style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.5;">
+                    AI will generate synthesizable RTL module and testbench based on your signal list, scenarios, and waveform data. Uses waveform timing to create accurate stimulus in the testbench.
+                </div>
+                <div id="verilog-ai-status" style="display:none;font-size:11px;padding:5px 8px;border-radius:var(--radius);margin-bottom:8px;"></div>
+                <button class="btn-primary" id="verilog-ai-generate-btn" style="width:100%;justify-content:center;display:flex;align-items:center;gap:6px;">
+                    <i class="ph ph-sparkle"></i> Generate RTL with AI
+                </button>
+            </div>
+
+            <!-- Manual Generation Section -->
+            <div style="border:1px solid var(--border);border-radius:var(--radius);padding:12px;">
+                <div style="font-size:11px;font-weight:700;color:var(--text2);letter-spacing:0.4px;text-transform:uppercase;margin-bottom:8px;">
+                    Manual Template Generation
+                </div>
+                <div class="module-opt"><input type="checkbox" id="chk-always" checked><div><div class="module-opt-lbl">Sequential always block</div><div class="module-opt-desc">Generate clocked always @(posedge clk)</div></div></div>
+                <div class="module-opt"><input type="checkbox" id="chk-async-reset"><div><div class="module-opt-lbl">Asynchronous reset</div><div class="module-opt-desc">Use always @(posedge clk or negedge rst_n)</div></div></div>
+                <div class="module-opt"><input type="checkbox" id="chk-tb" checked><div><div class="module-opt-lbl">Generate testbench</div><div class="module-opt-desc">Create tb_module.v with waveform stimulus</div></div></div>
+                <div style="margin-top:10px;">
+                    <button class="btn-secondary" id="verilog-generate-btn" style="display:flex;align-items:center;gap:5px;"><i class="ph ph-wrench"></i> Generate Template</button>
+                </div>
             </div>
         </div>
+
+        <!-- MODULE TAB -->
         <div id="tab-module" class="tab-panel">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <span style="font-size:10px;color:var(--text3);font-weight:600;letter-spacing:0.5px;">MODULE RTL</span>
-                <button class="copy-btn" id="copy-module-btn">Copy</button>
+                <div style="display:flex;gap:6px;align-items:center;">
+                    <span id="module-gen-badge" style="display:none;font-size:9px;padding:2px 7px;border-radius:10px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent-light2);font-weight:600;">AI GENERATED</span>
+                    <button class="copy-btn" id="copy-module-btn">Copy</button>
+                </div>
             </div>
-            <div class="code-area" id="verilog-module-output">// Click "Generate RTL" on the Configuration tab</div>
+            <div class="code-area" id="verilog-module-output">// Click "Generate RTL with AI" or "Generate Template" on the Configuration tab</div>
         </div>
-        <div id="tab-fsm" class="tab-panel">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <span style="font-size:10px;color:var(--text3);font-weight:600;letter-spacing:0.5px;">FSM LOGIC</span>
-                <button class="copy-btn" id="copy-fsm-btn">Copy</button>
-            </div>
-            <div class="code-area" id="verilog-fsm-output">// No FSM detected</div>
-        </div>
+
+        <!-- TESTBENCH TAB -->
         <div id="tab-tb" class="tab-panel">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <span style="font-size:10px;color:var(--text3);font-weight:600;letter-spacing:0.5px;">TESTBENCH</span>
-                <button class="copy-btn" id="copy-tb-btn">Copy</button>
+                <div style="display:flex;gap:6px;align-items:center;">
+                    <span id="tb-gen-badge" style="display:none;font-size:9px;padding:2px 7px;border-radius:10px;background:var(--accent-light);color:var(--accent);border:1px solid var(--accent-light2);font-weight:600;">AI GENERATED</span>
+                    <button class="copy-btn" id="copy-tb-btn">Copy</button>
+                </div>
             </div>
-            <div class="code-area" id="verilog-tb-output">// Click "Generate RTL" on the Configuration tab</div>
+            <div class="code-area" id="verilog-tb-output">// Click "Generate RTL with AI" or "Generate Template" on the Configuration tab</div>
         </div>
+
         <div class="modal-actions">
             <button id="verilog-cancel-btn" class="btn-cancel">Close</button>
         </div>
@@ -988,13 +1044,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Markers
-    const updDelta=()=>{deltaField.value=(markerTime!==null&&marker2Time!==null)?Math.abs(marker2Time-markerTime).toFixed(2):'';};
+    const updDelta=()=>{deltaField.value=(markerTime!==null&&marker2Time!==null)?Math.abs(marker2Time-markerTime).toFixed(3):'';};
     canvasWrapper.addEventListener('mousedown',e=>{
         if(isSelectionMode||e.target!==canvas||isZoomDragging)return;
         const t=e.offsetX/TIMESTEP_WIDTH;
-        if(e.buttons===1){markerTime=t;scanField.value=t.toFixed(2);}
-        else if(e.buttons===3){e.preventDefault();marker2Time=t;}
+        // e.buttons: 1=left only, 3=left+right simultaneously
+        if(e.buttons===3){e.preventDefault();marker2Time=t;}
+        else if(e.buttons===1){markerTime=t;scanField.value=t.toFixed(3);}
         updDelta();renderCanvas();
+    });
+    canvasWrapper.addEventListener('mousemove',e=>{
+        // Update marker2 while holding left+right
+        if(e.buttons===3&&e.target===canvas&&!isSelectionMode&&!isZoomDragging){
+            marker2Time=e.offsetX/TIMESTEP_WIDTH;updDelta();renderCanvas();
+        }
     });
     canvasWrapper.addEventListener('contextmenu',e=>e.preventDefault());
 
@@ -1056,8 +1119,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Edge nav
     const getTrans=sig=>{const t=[];for(let i=1;i<timeStepCount;i++){const pp=parseValue(sig.values[i-1]),cp=parseValue(sig.values[i]);if(cp.value!==pp.value)t.push(i+cp.delay);}return t;};
-    document.getElementById('prevEdgeBtn').addEventListener('click',()=>{if(selectedSignalIndex===null)return;const tr=getTrans(signals[selectedSignalIndex]),ct=markerTime===null?timeStepCount+1:markerTime,et=tr.slice().reverse().find(t=>t<ct-0.001);if(et!==undefined){markerTime=et;scanField.value=et.toFixed(2);renderCanvas();}});
-    document.getElementById('nextEdgeBtn').addEventListener('click',()=>{if(selectedSignalIndex===null)return;const tr=getTrans(signals[selectedSignalIndex]),ct=markerTime===null?-1:markerTime,et=tr.find(t=>t>ct+0.001);if(et!==undefined){markerTime=et;scanField.value=et.toFixed(2);renderCanvas();}});
+    document.getElementById('prevEdgeBtn').addEventListener('click',()=>{if(selectedSignalIndex===null)return;const tr=getTrans(signals[selectedSignalIndex]),ct=markerTime===null?timeStepCount+1:markerTime,et=tr.slice().reverse().find(t=>t<ct-0.001);if(et!==undefined){markerTime=et;scanField.value=et.toFixed(3);renderCanvas();}});
+    document.getElementById('nextEdgeBtn').addEventListener('click',()=>{if(selectedSignalIndex===null)return;const tr=getTrans(signals[selectedSignalIndex]),ct=markerTime===null?-1:markerTime,et=tr.find(t=>t>ct+0.001);if(et!==undefined){markerTime=et;scanField.value=et.toFixed(3);renderCanvas();}});
 
     // Row selection
     const updRowSel=()=>tableBody.querySelectorAll('tr').forEach((r,i)=>r.classList.toggle('table-row-selected',selectedTableRows.has(i)));
@@ -1130,16 +1193,112 @@ document.addEventListener('DOMContentLoaded', () => {
     aiToggleBtn.addEventListener('click', () => { if (aiPanel.classList.contains('collapsed')) openAiPanel(); else closeAiPanel(); });
     aiCloseBtn.addEventListener('click', closeAiPanel);
 
+    // ===== SAVE / OPEN AI ASSIST CONFIG =====
+    document.getElementById('aiSaveBtn').addEventListener('click', () => {
+        // Collect all current AI panel state
+        const sigNames = Array.from(document.querySelectorAll('.ai-sig-name'));
+        const sigRanges = Array.from(document.querySelectorAll('.ai-sig-range'));
+        const config = {
+            _version: 1,
+            _savedAt: new Date().toISOString(),
+            apiKey: document.getElementById('ai-api-key').value,
+            model: document.getElementById('ai-model').value,
+            modelCustom: document.getElementById('ai-model-custom').value,
+            designName: document.getElementById('ai-design-name').value,
+            signals: sigNames.map((inp, i) => ({
+                name: inp.value.trim(),
+                range: sigRanges[i]?.value.trim() || ''
+            })).filter(s => s.name),
+            scenarios: Array.from(document.querySelectorAll('.ai-scenario')).map(t => t.value),
+            totalTimesteps: document.getElementById('ai-total-timesteps').value,
+            signalPrompt: document.getElementById('ai-signal-prompt').value
+        };
+
+        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+        const name = (config.designName || 'ai_assist').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || 'ai_assist';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${name}_config.json`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+
+        // Brief visual feedback on the button
+        const btn = document.getElementById('aiSaveBtn');
+        btn.innerHTML = '<i class="ph ph-check"></i>';
+        btn.style.color = 'var(--green)';
+        setTimeout(() => { btn.innerHTML = '<i class="ph ph-floppy-disk"></i>'; btn.style.color = ''; }, 1500);
+    });
+
+    document.getElementById('aiOpenBtn').addEventListener('click', () => {
+        document.getElementById('ai-json-file-input').click();
+    });
+
+    document.getElementById('ai-json-file-input').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const config = JSON.parse(ev.target.result);
+
+                // Restore API config
+                if (config.apiKey !== undefined) document.getElementById('ai-api-key').value = config.apiKey;
+                if (config.model !== undefined) {
+                    document.getElementById('ai-model').value = config.model;
+                    document.getElementById('custom-model-wrap').style.display = config.model === 'custom' ? 'flex' : 'none';
+                }
+                if (config.modelCustom !== undefined) document.getElementById('ai-model-custom').value = config.modelCustom;
+
+                // Restore design name
+                if (config.designName !== undefined) document.getElementById('ai-design-name').value = config.designName;
+
+                // Restore signals
+                if (Array.isArray(config.signals)) {
+                    document.getElementById('ai-signals-container').innerHTML = '';
+                    config.signals.forEach(s => aiAddSignalRow(s.name || '', s.range || ''));
+                }
+
+                // Restore scenarios
+                if (Array.isArray(config.scenarios)) {
+                    document.getElementById('ai-scenarios-container').innerHTML = '';
+                    config.scenarios.forEach(text => {
+                        aiAddScenarioRow();
+                        const rows = document.querySelectorAll('.ai-scenario');
+                        rows[rows.length - 1].value = text;
+                    });
+                }
+
+                // Restore total timesteps
+                if (config.totalTimesteps !== undefined) document.getElementById('ai-total-timesteps').value = config.totalTimesteps;
+
+                // Restore signal prompt
+                if (config.signalPrompt !== undefined) document.getElementById('ai-signal-prompt').value = config.signalPrompt;
+
+                // Brief visual feedback
+                const btn = document.getElementById('aiOpenBtn');
+                btn.innerHTML = '<i class="ph ph-check"></i>';
+                btn.style.color = 'var(--green)';
+                setTimeout(() => { btn.innerHTML = '<i class="ph ph-folder-open"></i>'; btn.style.color = ''; }, 1500);
+
+            } catch (err) {
+                alert('Failed to load configuration: ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = ''; // allow re-opening same file
+    });
+
     // Model select custom
     document.getElementById('ai-model').addEventListener('change', e => {
         document.getElementById('custom-model-wrap').style.display = e.target.value === 'custom' ? 'flex' : 'none';
     });
 
     // AI signal/scenario rows
-    const aiAddSignalRow = () => {
+    const aiAddSignalRow = (name='', range='') => {
         const c = document.getElementById('ai-signals-container');
         const d = document.createElement('div'); d.className = 'ai-sig-row';
-        d.innerHTML = `<input type="text" class="ai-sig-name sig-n" placeholder="Signal name"><input type="text" class="ai-sig-range sig-r" placeholder="[7:0]">`;
+        d.innerHTML = `<input type="text" class="ai-sig-name sig-n" placeholder="Signal name" value="${name}"><input type="text" class="ai-sig-range sig-r" placeholder="[7:0]" value="${range}"><button class="sig-del-btn" title="Remove signal"><i class="ph ph-x"></i></button>`;
+        d.querySelector('.sig-del-btn').addEventListener('click', () => d.remove());
         c.appendChild(d);
     };
     const aiAddScenarioRow = () => {
@@ -1150,12 +1309,84 @@ document.addEventListener('DOMContentLoaded', () => {
         c.appendChild(d);
     };
 
-    document.getElementById('ai-add-signal-btn').addEventListener('click', aiAddSignalRow);
+    document.getElementById('ai-add-signal-btn').addEventListener('click', () => aiAddSignalRow());
     document.getElementById('ai-add-scenario-btn').addEventListener('click', aiAddScenarioRow);
 
     // Initialize default rows
     aiAddSignalRow(); aiAddSignalRow();
     aiAddScenarioRow();
+
+    // AI Generate Signals button
+    document.getElementById('ai-gen-signals-btn').addEventListener('click', async () => {
+        const apiKey = document.getElementById('ai-api-key').value.trim();
+        const modelSel = document.getElementById('ai-model').value;
+        const model = modelSel === 'custom' ? (document.getElementById('ai-model-custom').value.trim() || 'gpt-3.5-turbo') : modelSel;
+        const prompt = document.getElementById('ai-signal-prompt').value.trim();
+        const statusEl = document.getElementById('ai-status');
+        const genBtn = document.getElementById('ai-gen-signals-btn');
+        const showStatus = (msg, type='info') => { statusEl.textContent=msg; statusEl.className=`ai-status ${type}`; statusEl.style.display='block'; };
+
+        if (!apiKey) { showStatus('OpenAI API key is required.', 'error'); return; }
+        if (!prompt) { showStatus('Enter a signal generation prompt.', 'error'); return; }
+
+        showStatus('Generating signals...', 'info');
+        genBtn.disabled = true;
+
+        const sysPrompt = `You are a digital hardware expert. When asked to generate signals for a protocol or interface, respond ONLY with a JSON array of signal objects. Each object MUST have:
+- "name": string (e.g. "AWVALID", "AWADDR", "WDATA")
+- "range": string — ALWAYS provide the bit width in Verilog format. Use "[N-1:0]" for multi-bit signals (e.g. "[31:0]" for 32-bit, "[7:0]" for 8-bit, "[3:0]" for 4-bit). Use "" (empty string) ONLY for true 1-bit signals like valid/ready/enable flags. NEVER leave range null or omit it.
+Rules:
+- For address signals: use "[31:0]" unless the protocol specifies otherwise.
+- For data signals: use "[31:0]" or "[63:0]" as appropriate.
+- For ID/len/size/burst/prot/resp fields: use their correct protocol-defined widths.
+- For handshake/flag signals (valid, ready, en, sel, etc.): use "".
+No explanation, no markdown, no commentary — just the raw JSON array.
+Example: [{"name":"AWVALID","range":""},{"name":"AWADDR","range":"[31:0]"},{"name":"AWLEN","range":"[7:0]"}]`;
+
+        try {
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify({ model, messages: [{ role: 'system', content: sysPrompt }, { role: 'user', content: prompt }] })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error?.message || `API error ${res.status}`);
+            const raw = data.choices?.[0]?.message?.content || '';
+            // Strip markdown fences if present
+            const cleaned = raw.replace(/```json\n?/g,'').replace(/```/g,'').trim();
+            const sigList = JSON.parse(cleaned);
+            if (!Array.isArray(sigList)) throw new Error('Expected a JSON array');
+            // Clear existing signal rows and populate
+            document.getElementById('ai-signals-container').innerHTML = '';
+            sigList.forEach(s => {
+                const name = (s.name || '').trim();
+                if (!name) return;
+                // Normalize range: if missing/empty/null/"1"/"1-bit"/"1bit" → use "" (1-bit)
+                let range = (s.range || s.width || '').toString().trim();
+                // If AI returned something like "1", "1-bit", "1 bit", "scalar" — treat as 1-bit
+                if (!range || range === '1' || /^1[\s-]?bit$/i.test(range) || /^scalar$/i.test(range) || /^single$/i.test(range)) {
+                    range = '';
+                }
+                // If AI returned just a number like "8" → convert to [7:0]
+                if (/^\d+$/.test(range)) {
+                    const w = parseInt(range, 10);
+                    range = w > 1 ? `[${w-1}:0]` : '';
+                }
+                // If AI returned something like "32-bit" or "32 bit" → convert to [31:0]
+                const mBit = range.match(/^(\d+)[\s-]?bits?$/i);
+                if (mBit) {
+                    const w = parseInt(mBit[1], 10);
+                    range = w > 1 ? `[${w-1}:0]` : '';
+                }
+                aiAddSignalRow(name, range);
+            });
+            showStatus(`✓ Added ${sigList.length} signal(s) from AI. Empty widths defaulted to 1-bit.`, 'ok');
+        } catch (e) {
+            showStatus(`Error: ${e.message}`, 'error');
+        } finally {
+            genBtn.disabled = false;
+        }
+    });
 
     // AI Run
     document.getElementById('ai-run-btn').addEventListener('click', async () => {
@@ -1213,48 +1444,78 @@ document.addEventListener('DOMContentLoaded', () => {
         return h;
     };
 
-    const genVerilog = () => {
+    // Manual template generator (no FSM)
+    const genVerilogTemplate = () => {
         const mod = document.getElementById('verilog-module-name').value.trim()||'design_top';
-        const genAlways=document.getElementById('chk-always').checked,genAsync=document.getElementById('chk-async-reset').checked;
-        const genFsm=document.getElementById('chk-fsm').checked,genTb=document.getElementById('chk-tb').checked;
+        const genAlways=document.getElementById('chk-always').checked;
+        const genAsync=document.getElementById('chk-async-reset').checked;
+        const genTb=document.getElementById('chk-tb').checked;
         const clkSig=signals.find(s=>/^clk|^clock/.test(s.name.toLowerCase()));
         const rstSig=signals.find(s=>/^rst|^reset/.test(s.name.toLowerCase()));
-        const clkName=clkSig?clkSig.name:'clk',rstName=rstSig?rstSig.name:'rst_n';
+        const clkName=clkSig?clkSig.name:'clk', rstName=rstSig?rstSig.name:'rst_n';
         const rstActive=rstSig&&rstSig.name.includes('_n')?'!':'';
-        const inputs=[],outputs=[];
+        const inputs=[], outputs=[];
         signals.filter(s=>!s.isBusMember).forEach(sig=>{
-            const rm=sig.range.match(/\[(\d+):(\d+)\]/),width=rm?`[${rm[1]}:${rm[2]}]`:'';
-            const isClk=/^clk|^clock/.test(sig.name.toLowerCase()),isRst=/^rst|^reset/.test(sig.name.toLowerCase());
+            const rm=sig.range.match(/\[(\d+):(\d+)\]/), width=rm?`[${rm[1]}:${rm[2]}]`:'';
+            const isClk=/^clk|^clock/.test(sig.name.toLowerCase()), isRst=/^rst|^reset/.test(sig.name.toLowerCase());
             const isOut=/out$|_o$|^q/.test(sig.name.toLowerCase());
-            if(isClk||isRst||!isOut)inputs.push({name:sig.name,width});
-            if(isOut)outputs.push({name:sig.name,width});
+            if(isClk||isRst||!isOut) inputs.push({name:sig.name,width});
+            if(isOut) outputs.push({name:sig.name,width});
         });
-        const fsmDefs=genFsm?signals.filter(s=>!s.isBusMember&&s.range.includes(':')).map(sig=>{
-            const states=new Set();sig.values.forEach(v=>{const p=parseValue(v).value;if(p&&!['X','Z'].includes(p.toUpperCase())&&isNaN(parseInt(p,16)))states.add(p);});
-            return states.size?{name:sig.name,states:Array.from(states)}:null;}).filter(Boolean):[];
-        const fsmParams=fsmDefs.flatMap(f=>{const b=Math.max(1,Math.ceil(Math.log2(f.states.length+1)));return f.states.map((s,i)=>`  localparam ${s.toUpperCase().replace(/[^A-Z0-9_]/g,'_')} = ${b}'d${i};`);});
         const allPorts=[...inputs.map(p=>`  input  wire ${p.width?p.width+' ':''}${p.name}`),...outputs.map(p=>`  output reg  ${p.width?p.width+' ':''}${p.name}`)];
         let ab='';
         if(genAlways){
             const rst=outputs.map(o=>`    ${o.name} <= ${o.width?`${o.width.match(/\d+/)?.[0]}'h0`:"1'b0"};`);
-            const fRst=fsmDefs.map(f=>`    ${f.name} <= ${f.states[0]?.toUpperCase().replace(/[^A-Z0-9_]/g,'_')||'0'};`);
             const sens=genAsync?`posedge ${clkName} or negedge ${rstName}`:`posedge ${clkName}`;
-            ab=`\nalways @(${sens}) begin\n  if (${rstActive}${rstName}) begin\n${[...rst,...fRst].join('\n')||'    // Reset'}\n  end else begin\n    // Sequential logic\n${fsmDefs.map(f=>`    case (${f.name})\n${f.states.map((s,i)=>`      ${s.toUpperCase().replace(/[^A-Z0-9_]/g,'_')}: begin\n        ${f.name} <= ${(f.states[(i+1)%f.states.length]||f.states[0]).toUpperCase().replace(/[^A-Z0-9_]/g,'_')};\n      end`).join('\n')}\n      default: ${f.name} <= ${f.states[0]?.toUpperCase().replace(/[^A-Z0-9_]/g,'_')||'0'};\n    endcase`).join('\n')}\n  end\nend\n`;}
-        const moduleCode=[`// Auto-generated by SS Wave Gen`,`// Module: ${mod} | Timesteps: ${timeStepCount}`,`// ${new Date().toISOString()}`,``,fsmParams.length?fsmParams.join('\n')+'\n':'',`module ${mod} (`,allPorts.join(',\n'),`);`,ab,`endmodule`].filter(Boolean).join('\n');
-        let fsmCode='// No FSM signals detected';
-        if(fsmDefs.length)fsmCode=fsmDefs.map(f=>{const b=Math.max(1,Math.ceil(Math.log2(f.states.length+1)));return `// FSM: ${f.name} (${b}-bit, ${f.states.length} states)\nreg [${b-1}:0] ${f.name};\n\nalways @(posedge ${clkName}) begin\n  case (${f.name})\n${f.states.map((s,i)=>`    ${s.toUpperCase().replace(/[^A-Z0-9_]/g,'_')}: ${f.name} <= ${(f.states[(i+1)%f.states.length]||f.states[0]).toUpperCase().replace(/[^A-Z0-9_]/g,'_')};`).join('\n')}\n    default: ${f.name} <= ${f.states[0]?.toUpperCase().replace(/[^A-Z0-9_]/g,'_')||'0'};\n  endcase\nend`;}).join('\n\n');
-        let tbCode='// Testbench disabled';
+            ab=`\nalways @(${sens}) begin\n  if (${rstActive}${rstName}) begin\n${rst.join('\n')||'    // Reset outputs'}\n  end else begin\n    // TODO: Add logic here\n  end\nend\n`;
+        }
+        const moduleCode=[
+            `// Auto-generated template by SS Wave Gen`,
+            `// Module: ${mod} | Signals: ${signals.filter(s=>!s.isBusMember).length} | Timesteps: ${timeStepCount}`,
+            `// Generated: ${new Date().toISOString()}`,
+            ``,
+            `module ${mod} (`,
+            allPorts.join(',\n'),
+            `);`,
+            ab,
+            `endmodule`
+        ].filter(Boolean).join('\n');
+
+        let tbCode='// Testbench generation disabled';
         if(genTb){
             const tRegs=inputs.map(p=>`  reg  ${p.width?p.width+' ':''}${p.name};`).join('\n');
             const tWires=outputs.map(p=>`  wire ${p.width?p.width+' ':''}${p.name};`).join('\n');
             const pInst=[...inputs.map(p=>`.${p.name}(${p.name})`),...outputs.map(p=>`.${p.name}(${p.name})`)].join(',\n    ');
             const stim=[];
-            for(let t=0;t<Math.min(timeStepCount,20);t++){
-                const asgn=signals.filter(s=>!s.isBusMember&&inputs.some(p=>p.name===s.name)).map(s=>{const v=parseValue(s.values[t]).value,pw=inputs.find(x=>x.name===s.name)?.width?.match(/\d+/)?.[0]||1;const fmt=['X','Z'].includes(v.toUpperCase())?`{${pw}{1'b${v.toLowerCase()}}}`:(v.startsWith('0x')?`${pw}'h${v.slice(2)}`:(parseInt(v)<=1&&pw<=1?`1'b${v}`:`${pw}'d${v}`));return `    ${s.name} = ${fmt};`;}).join('\n');
-                if(asgn)stim.push(`    // T=${t}\n${asgn}`);
+            for(let t=0;t<Math.min(timeStepCount,30);t++){
+                const asgn=signals.filter(s=>!s.isBusMember&&inputs.some(p=>p.name===s.name)).map(s=>{
+                    const v=parseValue(s.values[t]).value, pw=inputs.find(x=>x.name===s.name)?.width?.match(/\d+/)?.[0]||1;
+                    const fmt=['X','Z'].includes(v.toUpperCase())?`{${pw}{1'b${v.toLowerCase()}}}`:(v.startsWith('0x')?`${pw}'h${v.slice(2)}`:(parseInt(v)<=1&&pw<=1?`1'b${v}`:`${pw}'d${v}`));
+                    return `    ${s.name} = ${fmt};`;
+                }).join('\n');
+                if(asgn) stim.push(`    // T=${t}\n${asgn}`);
             }
-            tbCode=`\`timescale 1ns/1ps\nmodule tb_${mod};\n${tRegs}\n${tWires}\n\n  ${mod} dut (\n    ${pInst}\n  );\n\n${clkSig?`  initial ${clkName} = 0;\n  always #5 ${clkName} = ~${clkName};\n`:''}\n  initial begin\n    $dumpfile("tb_${mod}.vcd");\n    $dumpvars(0, tb_${mod});\n${stim.join('\n    #10;\n\n')}\n    #10; $finish;\n  end\nendmodule`;}
-        return{module:moduleCode,fsm:fsmCode,tb:tbCode};
+            tbCode=`\`timescale 1ns/1ps\nmodule tb_${mod};\n${tRegs}\n${tWires||'  // No output wires'}\n\n  ${mod} dut (\n    ${pInst}\n  );\n\n${clkSig?`  // Clock\n  initial ${clkName} = 0;\n  always #5 ${clkName} = ~${clkName};\n`:''}\n  initial begin\n    $dumpfile("tb_${mod}.vcd");\n    $dumpvars(0, tb_${mod});\n\n${stim.join('\n    #10;\n\n')}\n    #10;\n    $finish;\n  end\n\nendmodule`;
+        }
+        return { module: moduleCode, tb: tbCode };
+    };
+
+    // Build context string from current waveform for AI prompt
+    const buildWaveformContext = () => {
+        const sigsSummary = signals.filter(s=>!s.isBusMember).map(s=>{
+            const rm=s.range.match(/\[(\d+):(\d+)\]/);
+            const width=rm?`${parseInt(rm[1])-parseInt(rm[2])+1}-bit`:'1-bit';
+            // Sample first 20 timesteps
+            const sample=s.values.slice(0,Math.min(20,timeStepCount)).join(', ');
+            return `  ${s.name} (${width}): [${sample}${timeStepCount>20?', ...':''}]`;
+        }).join('\n');
+
+        const scenariosEl = document.querySelectorAll('.ai-scenario');
+        const scenariosList = Array.from(scenariosEl).map((t,i)=>t.value.trim()).filter(Boolean);
+        const scenariosText = scenariosList.length ? scenariosList.map((s,i)=>`  Scenario ${i+1}: ${s}`).join('\n') : '  (no scenarios defined)';
+
+        const designName = document.getElementById('ai-design-name').value.trim() || 'design';
+        return { sigsSummary, scenariosText, designName };
     };
 
     // Modal tabs
@@ -1267,33 +1528,169 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Verilog model custom toggle
+    document.getElementById('verilog-model').addEventListener('change', e => {
+        document.getElementById('verilog-model-custom-wrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
+    });
+
+    // Open Verilog modal
     document.getElementById('verilogBtn').addEventListener('click',()=>{
-        if(!document.getElementById('verilog-module-name').value){
+        const modName = document.getElementById('verilog-module-name');
+        if(!modName.value){
             const dn=document.getElementById('ai-design-name').value;
-            document.getElementById('verilog-module-name').value=dn?dn.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''):'design_top';
+            modName.value=dn?dn.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,''):'design_top';
         }
+        // Sync API key from AI panel if available
+        const aiKey = document.getElementById('ai-api-key').value.trim();
+        if(aiKey && !document.getElementById('verilog-api-key').value) {
+            document.getElementById('verilog-api-key').value = aiKey;
+        }
+        // Sync model selection
+        const aiModel = document.getElementById('ai-model').value;
+        if(aiModel) document.getElementById('verilog-model').value = aiModel;
+
         const bs=signals.filter(s=>!s.isBusMember&&s.range.includes(':'));
         const bits=signals.filter(s=>!s.isBusMember&&!s.range.includes(':'));
-        const fsms=signals.filter(s=>!s.isBusMember&&s.range.includes(':')&&s.values.some(v=>{const p=parseValue(v).value;return isNaN(parseInt(p,16))&&!['X','Z'].includes(p.toUpperCase());}));
-        document.getElementById('verilog-stats').innerHTML=`<span class="stat-chip info">${timeStepCount} timesteps</span><span class="stat-chip ok">${bits.length} bit signals</span><span class="stat-chip ok">${bs.length} bus signals</span>${fsms.length?`<span class="stat-chip warn">${fsms.length} FSM detected</span>`:''}`;
+        document.getElementById('verilog-stats').innerHTML=`<span class="stat-chip info">${timeStepCount} timesteps</span><span class="stat-chip ok">${bits.length} 1-bit signals</span><span class="stat-chip ok">${bs.length} bus signals</span>`;
         verilogModalOverlay.classList.remove('hidden');
     });
+
+    // Manual template generate
     document.getElementById('verilog-generate-btn').addEventListener('click',()=>{
-        const{module,fsm,tb}=genVerilog();
-        document.getElementById('verilog-module-output').innerHTML=hlVerilog(module);
-        document.getElementById('verilog-fsm-output').innerHTML=hlVerilog(fsm);
-        document.getElementById('verilog-tb-output').innerHTML=hlVerilog(tb);
+        const {module, tb} = genVerilogTemplate();
+        document.getElementById('verilog-module-output').innerHTML = hlVerilog(module);
+        document.getElementById('verilog-tb-output').innerHTML = hlVerilog(tb);
+        document.getElementById('module-gen-badge').style.display='none';
+        document.getElementById('tb-gen-badge').style.display='none';
+        // Switch to module tab
         document.querySelectorAll('.modal-tab').forEach(t=>t.classList.remove('active'));
         document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
         document.querySelector('[data-tab="module"]').classList.add('active');
         document.getElementById('tab-module').classList.add('active');
     });
+
+    // AI RTL generation
+    document.getElementById('verilog-ai-generate-btn').addEventListener('click', async () => {
+        const apiKey = document.getElementById('verilog-api-key').value.trim();
+        const modelSel = document.getElementById('verilog-model').value;
+        const model = modelSel === 'custom' ? (document.getElementById('verilog-model-custom').value.trim() || 'gpt-3.5-turbo') : modelSel;
+        const modName = document.getElementById('verilog-module-name').value.trim() || 'design_top';
+        const statusEl = document.getElementById('verilog-ai-status');
+        const genBtn = document.getElementById('verilog-ai-generate-btn');
+
+        const showVStatus = (msg, type='info') => {
+            statusEl.textContent = msg;
+            statusEl.style.display = 'block';
+            statusEl.style.background = type==='ok' ? 'var(--green-bg)' : type==='error' ? 'var(--red-bg)' : 'var(--accent-light)';
+            statusEl.style.color = type==='ok' ? 'var(--green)' : type==='error' ? 'var(--red)' : 'var(--accent)';
+            statusEl.style.border = `1px solid ${type==='ok'?'#9ed89e':type==='error'?'#f5b4ba':'var(--accent-light2)'}`;
+        };
+
+        if(!apiKey) { showVStatus('OpenAI API key is required.', 'error'); return; }
+        if(!signals.filter(s=>!s.isBusMember).length) { showVStatus('No signals found. Add signals first.', 'error'); return; }
+
+        const { sigsSummary, scenariosText, designName } = buildWaveformContext();
+
+        // Build waveform CSV for context (up to 30 timesteps)
+        const tcLimit = Math.min(timeStepCount, 30);
+        const csvLines = [`Signal,Range,${Array.from({length:tcLimit},(_,i)=>i).join(',')}`];
+        signals.filter(s=>!s.isBusMember).forEach(s=>{
+            csvLines.push(`${s.name},${s.range||''},${s.values.slice(0,tcLimit).join(',')}`);
+        });
+        const waveformCsv = csvLines.join('\n');
+
+        const systemPrompt = `You are an expert RTL/Verilog engineer. Generate clean, synthesizable Verilog code. Always respond with ONLY valid Verilog code split into two clearly delimited sections using these exact markers:
+===MODULE_START===
+<module code here>
+===MODULE_END===
+===TESTBENCH_START===
+<testbench code here>
+===TESTBENCH_END===
+No explanation, no markdown, no extra text outside the markers.`;
+
+        const userPrompt = `Design name: "${designName}"
+Module name: ${modName}
+
+Signals (name, width, sample values from waveform):
+${sigsSummary}
+
+Scenarios (behavioral description):
+${scenariosText}
+
+Waveform data (CSV, first ${tcLimit} timesteps):
+${waveformCsv}
+
+Requirements:
+1. Generate a synthesizable Verilog MODULE named "${modName}" with:
+   - Correct port declarations for all signals above (use wire for inputs, reg for outputs)
+   - Sequential always block clocked on posedge clk
+   - Reset logic based on rst_n (active-low) if present
+   - Behavioral logic that reflects the described scenarios and waveform transitions
+   - Proper parameter/localparam declarations if needed
+   - Well-commented code explaining the logic
+
+2. Generate a complete TESTBENCH named "tb_${modName}" with:
+   - \`timescale 1ns/1ps
+   - All DUT ports declared as reg (inputs) or wire (outputs)
+   - Clock generation (posedge clk, 10ns period)
+   - Stimulus derived from the waveform data above — apply exact signal values at each timestep
+   - $dumpfile and $dumpvars for VCD
+   - $display statements showing key signal transitions
+   - $finish after all stimulus is applied`;
+
+        showVStatus('Generating RTL with AI... this may take a moment.', 'info');
+        genBtn.disabled = true;
+
+        try {
+            const res = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+                body: JSON.stringify({
+                    model,
+                    max_tokens: 3000,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ]
+                })
+            });
+            const data = await res.json();
+            if(!res.ok) throw new Error(data.error?.message || `API error ${res.status}`);
+
+            const raw = data.choices?.[0]?.message?.content || '';
+
+            // Parse module and testbench from delimiters
+            const modMatch = raw.match(/===MODULE_START===([\s\S]*?)===MODULE_END===/);
+            const tbMatch  = raw.match(/===TESTBENCH_START===([\s\S]*?)===TESTBENCH_END===/);
+
+            const moduleCode = modMatch ? modMatch[1].trim() : raw.trim();
+            const tbCode = tbMatch ? tbMatch[1].trim() : '// Testbench not found in response — try regenerating';
+
+            document.getElementById('verilog-module-output').innerHTML = hlVerilog(moduleCode);
+            document.getElementById('verilog-tb-output').innerHTML = hlVerilog(tbCode);
+            document.getElementById('module-gen-badge').style.display = 'inline-flex';
+            document.getElementById('tb-gen-badge').style.display = 'inline-flex';
+
+            showVStatus(`✓ RTL generated successfully using ${model}.`, 'ok');
+
+            // Switch to Module tab
+            document.querySelectorAll('.modal-tab').forEach(t=>t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+            document.querySelector('[data-tab="module"]').classList.add('active');
+            document.getElementById('tab-module').classList.add('active');
+
+        } catch(e) {
+            showVStatus(`Error: ${e.message}`, 'error');
+        } finally {
+            genBtn.disabled = false;
+        }
+    });
+
     document.getElementById('verilog-cancel-btn').addEventListener('click',()=>verilogModalOverlay.classList.add('hidden'));
     verilogModalOverlay.addEventListener('click',e=>{if(e.target===verilogModalOverlay)verilogModalOverlay.classList.add('hidden');});
 
     const mkCopy=(btnId,srcId)=>{document.getElementById(btnId).addEventListener('click',()=>{const el=document.getElementById(srcId);navigator.clipboard.writeText(el.innerText||el.textContent).then(()=>{const b=document.getElementById(btnId);b.textContent='Copied!';b.classList.add('copied');setTimeout(()=>{b.textContent='Copy';b.classList.remove('copied');},2000);});});};
     mkCopy('copy-module-btn','verilog-module-output');
-    mkCopy('copy-fsm-btn','verilog-fsm-output');
     mkCopy('copy-tb-btn','verilog-tb-output');
 
     // ===== INIT =====
